@@ -1,0 +1,26 @@
+# ==============================================================================
+# RetailMind AI — Python Dependencies
+# ==============================================================================
+
+# LLM SDK (Official Google Gemini SDK)
+google-genai>=2.0.0
+
+# Protocol (Official Model Context Protocol SDK)
+mcp>=2.0.0
+
+# Data Analysis
+pandas>=2.2.0
+
+# UI Dashboard
+streamlit>=1.35.0
+
+# Validation & Settings
+pydantic>=2.10.0
+pydantic-settings>=2.0.0
+
+# Environment Management
+python-dotenv>=1.0.0
+
+# Testing Framework
+pytest>=8.0.0
+pytest-asyncio>=1.0.0

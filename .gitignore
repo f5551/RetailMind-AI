@@ -1,0 +1,74 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+ENV*/
+
+# Environment Variables & Secrets (CRITICAL SECURITY: NEVER COMMIT)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# SQLite Databases & Storage (CRITICAL SECURITY: Isolated / Local)
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+
+# Confidential / User-Uploaded Data
+uploads/
+data/raw/
+*.csv
+!sample_data/*.csv
+!sample_data/**/*.csv
+
+# Generated Reports & Artifacts
+reports/*
+!reports/.gitkeep
+
+# Traces (keep directory structure, ignore local run dumps unless selected for submission)
+# Note: Submission traces in traces/ are explicitly managed
+*.log
+
+# Pytest / Unit Test caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
