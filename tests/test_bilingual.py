@@ -133,8 +133,7 @@ def test_agent_system_instruction_language_directive():
     assert sig_async.parameters["language"].default == "en"
 
 
-@pytest.mark.asyncio
-async def test_live_agent_invocation_with_arabic_language():
+def test_live_agent_invocation_with_arabic_language():
     """Verify that invoking the agent with language='ar' executes cleanly through MCP."""
     sample_csv = WORKSPACE_ROOT / "sample_data" / "synthetic_sales.csv"
     session_id = "test_bilingual_agent_session"
