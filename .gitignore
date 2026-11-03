@@ -63,6 +63,7 @@ reports/*
 
 # Pytest / Unit Test caches
 .pytest_cache/
+.pytest_tmp/
 .coverage
 htmlcov/
 
