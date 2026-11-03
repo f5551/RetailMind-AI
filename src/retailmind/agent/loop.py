@@ -26,9 +26,11 @@ except Exception:
 from google import genai
 from google.genai import types
 
+from src.retailmind.agent.auth_service import AuthorizationService
 from src.retailmind.agent.cost_meter import BudgetExceededError, CostTracker
 from src.retailmind.agent.permissions import PermissionManager
 from src.retailmind.agent.tracer import ExecutionTracer
+from src.retailmind.audit.logger import AuditLogger
 from src.retailmind.config import settings
 from src.retailmind.data.loader import DatasetManager
 from src.retailmind.mcp.client import MCPConnectionError, RetailMindMCPClient
@@ -91,6 +93,8 @@ class RetailMindAgent:
         self.permission_manager = PermissionManager(policy=permission_policy or settings.permission_policy)
         self.execution_transport = execution_transport.lower()  # "mcp" (default) or "direct"
         self.memory_manager = memory_manager or SQLiteMemoryManager()
+        self.audit_logger = AuditLogger.get_default_logger()
+        self.auth_service = AuthorizationService.get_default_service()
 
         # Initialize Google GenAI client if credentials exist
         self._client: Optional[genai.Client] = None
@@ -330,19 +334,86 @@ class RetailMindAgent:
                             approval_callback=approval_callback,
                         )
 
-                        # Execute tool via MCP client (default) or direct dispatch
-                        if self.execution_transport == "mcp" and mcp_client:
-                            if tool_name == "generate_report" and not is_approved:
+                        # Execute tool via MCP client (default) or direct dispatch with capability tickets
+                        if tool_name == "generate_report":
+                            if not is_approved:
                                 observation = {
                                     "status": "approval_required",
                                     "error_code": "PERMISSION_DENIED_PENDING_APPROVAL",
                                     "message": "Action 'generate_report' is a write operation and requires explicit human user authorization.",
                                     "approval_status": "DENIED_OR_PENDING",
                                 }
+                                self.audit_logger.log_event(
+                                    task_id=task_id,
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    tool_name=tool_name,
+                                    action_type="WRITE",
+                                    decision="DENIED",
+                                    authorization_outcome="REJECTED_NO_HUMAN_APPROVAL",
+                                    execution_status="BLOCKED",
+                                    reason_code="ASK_ON_WRITE_APPROVAL_REQUIRED",
+                                    duration_ms=0.0,
+                                    trace_id=task_id,
+                                    model_id=self.model_id,
+                                    transport=self.execution_transport,
+                                    details={"tool_args": tool_args},
+                                )
                             else:
-                                observation = await mcp_client.call_tool(tool_name, tool_args)
+                                # Issue single-use parameter-bound authorization capability ticket
+                                auth_ticket = self.auth_service.issue_ticket(
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    tool_name=tool_name,
+                                    params=tool_args,
+                                )
+                                tool_args_with_ticket = dict(tool_args)
+                                tool_args_with_ticket["auth_ticket"] = auth_ticket
+
+                                if self.execution_transport == "mcp" and mcp_client:
+                                    observation = await mcp_client.call_tool(tool_name, tool_args_with_ticket)
+                                else:
+                                    observation = dispatch_tool_call(tool_name, tool_args, is_approved=True)
+
+                                self.audit_logger.log_event(
+                                    task_id=task_id,
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    tool_name=tool_name,
+                                    action_type="WRITE",
+                                    decision="ALLOWED",
+                                    authorization_outcome="APPROVED_BY_HUMAN_CALLBACK",
+                                    execution_status=observation.get("status", "SUCCESS") if isinstance(observation, dict) else "SUCCESS",
+                                    reason_code="EXTERNAL_APPROVAL_VALIDATED",
+                                    duration_ms=0.0,
+                                    trace_id=task_id,
+                                    model_id=self.model_id,
+                                    transport=self.execution_transport,
+                                    details={"tool_args": tool_args, "status": observation.get("status") if isinstance(observation, dict) else "unknown"},
+                                )
                         else:
-                            observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved)
+                            # Read-only tool call execution
+                            if self.execution_transport == "mcp" and mcp_client:
+                                observation = await mcp_client.call_tool(tool_name, tool_args)
+                            else:
+                                observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved)
+
+                            self.audit_logger.log_event(
+                                task_id=task_id,
+                                user_id=user_id,
+                                session_id=session_id,
+                                tool_name=tool_name,
+                                action_type="READ",
+                                decision="ALLOWED",
+                                authorization_outcome="READ_ONLY_AUTHORIZED",
+                                execution_status=observation.get("status", "SUCCESS") if isinstance(observation, dict) else "SUCCESS",
+                                reason_code="READ_ONLY_POLICY_AUTO",
+                                duration_ms=0.0,
+                                trace_id=task_id,
+                                model_id=self.model_id,
+                                transport=self.execution_transport,
+                                details={"tool_name": tool_name},
+                            )
 
                         call_summary = {
                             "turn": turn,

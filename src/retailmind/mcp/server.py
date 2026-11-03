@@ -30,10 +30,10 @@ logger = logging.getLogger("retailmind.mcp.server")
 server = MCPServer(name="retailmind-sales-server", version="1.0.0")
 
 
-def _safe_dispatch(tool_name: str, args: Dict[str, Any]) -> str:
+def _safe_dispatch(tool_name: str, args: Dict[str, Any], is_approved: bool = False) -> str:
     """Dispatches tool call safely, sanitizing exceptions to prevent path or secret leaks."""
     try:
-        result = dispatch_tool_call(tool_name, args)
+        result = dispatch_tool_call(tool_name, args, is_approved=is_approved)
         return json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         err_msg = str(exc)
@@ -146,18 +146,43 @@ def tool_generate_report(
     title: str,
     sections: List[Dict[str, Any]],
     format: str = "markdown",
-    approval_token: Optional[str] = None,
+    auth_ticket: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "generate_report",
-        {
-            "session_id": session_id,
-            "title": title,
-            "sections": sections,
-            "format": format,
-            "approval_token": approval_token,
-        },
+    from src.retailmind.agent.auth_service import AuthorizationService
+
+    args = {
+        "session_id": session_id,
+        "title": title,
+        "sections": sections,
+        "format": format,
+    }
+
+    auth_service = AuthorizationService.get_default_service()
+    is_valid, reason = auth_service.verify_and_consume_ticket(
+        ticket_id=auth_ticket,
+        user_id="",
+        session_id=session_id,
+        tool_name="generate_report",
+        params=args,
     )
+
+    if not is_valid:
+        logger.warning(
+            "MCP Server rejected unauthorized generate_report for session '%s': %s",
+            session_id,
+            reason,
+        )
+        return json.dumps(
+            {
+                "status": "error",
+                "error_code": "PERMISSION_DENIED",
+                "message": f"Write action 'generate_report' rejected: {reason}",
+                "approval_status": "DENIED",
+            },
+            ensure_ascii=False,
+        )
+
+    return _safe_dispatch("generate_report", args, is_approved=True)
 
 
 def main():

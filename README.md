@@ -3,8 +3,8 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Phase%203%20Verified-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-53%20passed%20(100%25)-success.svg)](docs/PHASE_03_TEST_RESULTS.md)
+[![Status](https://img.shields.io/badge/Phase-Phase%204%20Verified-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-60%20passed%20(100%25)-success.svg)](docs/PHASE_04_TEST_RESULTS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
 
@@ -137,5 +137,5 @@ python scripts/run_mcp_live_scenarios.py
 - [x] **Phase 2.1 — Final Quality & Cost Verification**: Corrected standard pricing ($0.25/$1.50), missing-cost test, termination tests, regression tests (35/35 passing).
 - [x] **Phase 2.2 — Final Cost Accounting Audit**: 100% reconciled arithmetic, verified cached rates, cost tests (42/42 passing).
 - [x] **Phase 3 — MCP & Persistent Memory**: Real MCP SDK v2 (`mcp==2.3.0`) stdio server & client, 8 tools routed dynamically, persistent SQLite memory surviving complete process restart, live Gemini+MCP traces (53/53 tests passing).
-- [ ] **Phase 4 — Safety, Approvals & Cost Metering**: Hostile injection tests, write approval gating, USD cost tracking.
+- [x] **Phase 4 — Safety, Approvals & Cost Metering**: 3 hostile injection tests defended, capability-based write approval tickets, append-only SQLite audit log, official submission traces (60/60 tests passing).
 - [ ] **Phase 5 — Streamlit UI & Public Deployment**: Interactive UI, cloud deployment, final submission validation.
