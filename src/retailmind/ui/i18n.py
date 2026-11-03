@@ -400,6 +400,34 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "📋 Dataset Audit Summary",
         "ar": "📋 ملخص تدقيق جودة البيانات",
     },
+    "audit_summary_active_title": {
+        "en": "📋 Active Dataset Audit Summary: `{name}`",
+        "ar": "📋 ملخص تدقيق مجموعة البيانات النشطة: `{name}`",
+    },
+    "active_dataset_banner": {
+        "en": "ℹ️ **Currently Active Dataset:** `{name}` ({rows:,} total rows) — Loaded & Active in Agent Memory and MCP Subprocess.",
+        "ar": "ℹ️ **مجموعة البيانات النشطة حالياً:** `{name}` ({rows:,} سطر إجمالي) — محملة ونشطة في ذاكرة الوكيل ونظام MCP.",
+    },
+    "warn_upload_failed_active_retained": {
+        "en": "⚠️ **Upload Rejected / Failed:** The uploaded file `{rejected}` was rejected and NOT loaded. The audit metrics and data preview below represent your **currently active dataset** (`{active}`, {rows:,} rows), which remains completely intact and unaffected.",
+        "ar": "⚠️ **تنبيه (تم رفض الرفع):** تم رفض أو فشل رفع الملف `{rejected}` ولم يتم تحميله. ملخص التدقيق ومعاينة البيانات أدناه يوضحان **مجموعة البيانات النشطة حالياً** (`{active}`، {rows:,} سطر)، والتي بقيت سليمة ونشطة دون أي تغيير.",
+    },
+    "err_row_limit_title": {
+        "en": "❌ Upload Rejected: Row Limit Exceeded",
+        "ar": "❌ تم رفض الملف المرفوع: تجاوز الحد الأقصى للأسطر",
+    },
+    "err_row_limit_desc": {
+        "en": "The uploaded file `{name}` contains **{rows:,}** rows, exceeding the platform limit of **50,000 rows** (governed by the CSV Data Contract for memory safety and sub-second analytics).",
+        "ar": "الملف المرفوع `{name}` يحتوي على **{rows:,}** سطراً، وهو ما يتجاوز الحد الأقصى للمنصة البالغ **50,000 سطر** (المحدد في عقد بيانات CSV لأمان الذاكرة وسرعة التحليل).",
+    },
+    "err_row_limit_guidance": {
+        "en": "💡 **What you can do:**\n1. **Filter date or region:** Narrow down your data before uploading (e.g. upload a single quarter or region).\n2. **Aggregate metrics:** Summarize transactions to daily/weekly totals rather than raw event streams.\n3. **Sample rows:** Take a representative sample of up to 50,000 rows.",
+        "ar": "💡 **ما يمكنك فعله:**\n1. **التصفية حسب التاريخ أو المنطقة:** تقليص نطاق البيانات قبل الرفع (مثل رفع بيانات ربع سنوي واحد أو منطقة محددة).\n2. **تجميع البيانات:** تلخيص المعاملات يومياً أو أسبوعياً بدلاً من سجلات العمليات التفصيلية الخام.\n3. **أخذ عينة من البيانات:** استخدام عينة لا تتجاوز 50,000 سطر لإجراء التحليل.",
+    },
+    "err_row_limit_active_note": {
+        "en": "🔒 **Active Data Retained:** Your previously active dataset `{active}` ({active_rows:,} rows) remains loaded and unaffected in the agent's memory and MCP subprocess.",
+        "ar": "🔒 **البيانات النشطة محفوظة دون تغيير:** تظل مجموعة البيانات السابقة `{active}` ({active_rows:,} سطر) محملة وغير متأثرة في ذاكرة الوكيل ونظام MCP.",
+    },
     "metric_total_rows": {
         "en": "Total Rows Ingested",
         "ar": "إجمالي الأسطر المستوردة",

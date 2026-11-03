@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Ready%20With%20Minor%20Issues-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-98%20passed%20(100%25)-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-103%20passed%20(100%25)-success.svg)](docs/STATUS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 

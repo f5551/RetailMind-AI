@@ -21,6 +21,17 @@ logger = logging.getLogger("retailmind.data.loader")
 FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
+class RowLimitExceededError(ValueError):
+    """Raised when an uploaded dataset exceeds the maximum allowable row count."""
+
+    def __init__(self, row_count: int, limit: int = 50000):
+        super().__init__(
+            f"Dataset exceeds {limit:,} maximum allowed row count limit (received {row_count:,} rows)."
+        )
+        self.row_count = row_count
+        self.limit = limit
+
+
 @dataclass
 class ValidationIssue:
     row_index: int
@@ -241,7 +252,7 @@ class DatasetManager:
 
         # Enforce 50,000 row count limit
         if len(raw_df) > 50000:
-            raise ValueError("Dataset exceeds 50,000 maximum allowed row count limit.")
+            raise RowLimitExceededError(len(raw_df), limit=50000)
 
         # Enforce approved synthetic dataset restriction in unauthenticated public demo mode
         is_compliant, reason = verify_approved_synthetic_dataset(csv_path_or_df, raw_df, auth_token=auth_token)

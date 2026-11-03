@@ -38,7 +38,7 @@ from src.retailmind.agent.auth_service import AuthorizationService
 from src.retailmind.agent.loop import AgentResult, RetailMindAgent
 from src.retailmind.audit.logger import AuditLogger
 from src.retailmind.config import settings
-from src.retailmind.data.loader import DatasetManager, ProcessedDataset
+from src.retailmind.data.loader import DatasetManager, ProcessedDataset, RowLimitExceededError
 from src.retailmind.mcp.client import RetailMindMCPClient
 from src.retailmind.memory.manager import SQLiteMemoryManager
 from src.retailmind.ui.i18n import get_layout_css, t
@@ -629,22 +629,48 @@ elif active_view == "dataset":
         help=t("uploader_help", lang),
     )
 
+    upload_error = None
     if uploaded_file is not None:
         if uploaded_file.size > 10 * 1024 * 1024:
             st.error(t("err_file_size", lang))
+            upload_error = t("err_file_size", lang)
         else:
             bytes_data = uploaded_file.getvalue()
             with st.spinner(t("spinner_validating_csv", lang)):
                 try:
                     processed = load_dataset_from_bytes(bytes_data, uploaded_file.name)
                     st.success(t("msg_csv_success", lang, name=uploaded_file.name))
+                except RowLimitExceededError as exc:
+                    upload_error = exc
+                    st.error(t("err_row_limit_title", lang))
+                    st.markdown(t("err_row_limit_desc", lang, name=uploaded_file.name, rows=exc.row_count))
+                    st.info(t("err_row_limit_guidance", lang))
+                    if st.session_state.dataset_loaded:
+                        active_ds = DatasetManager.get_dataset(st.session_state.session_id)
+                        st.warning(t("err_row_limit_active_note", lang, active=st.session_state.active_filename, active_rows=len(active_ds.raw_df)))
                 except Exception as exc:
-                    st.error(t("err_csv_parse", lang, error=exc))
+                    upload_error = exc
+                    err_str = str(exc)
+                    if "50,000" in err_str or "50000" in err_str:
+                        st.error(t("err_row_limit_title", lang))
+                        st.markdown(t("err_row_limit_desc", lang, name=uploaded_file.name, rows=50001))
+                        st.info(t("err_row_limit_guidance", lang))
+                        if st.session_state.dataset_loaded:
+                            active_ds = DatasetManager.get_dataset(st.session_state.session_id)
+                            st.warning(t("err_row_limit_active_note", lang, active=st.session_state.active_filename, active_rows=len(active_ds.raw_df)))
+                    else:
+                        st.error(t("err_csv_parse", lang, error=exc))
 
     if st.session_state.dataset_loaded:
         dataset = DatasetManager.get_dataset(st.session_state.session_id)
 
-        st.subheader(t("audit_summary_title", lang))
+        st.markdown("---")
+        if uploaded_file is not None and upload_error is not None:
+            st.warning(t("warn_upload_failed_active_retained", lang, rejected=uploaded_file.name, active=st.session_state.active_filename, rows=len(dataset.raw_df)))
+        else:
+            st.info(t("active_dataset_banner", lang, name=st.session_state.active_filename, rows=len(dataset.raw_df)))
+
+        st.subheader(t("audit_summary_active_title", lang, name=st.session_state.active_filename))
         aud_col1, aud_col2, aud_col3, aud_col4 = st.columns(4)
         aud_col1.metric(t("metric_total_rows", lang), len(dataset.raw_df))
         aud_col2.metric(t("metric_valid_rows", lang), len(dataset.valid_df))
