@@ -3,6 +3,14 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+# Inject Windows native SSL certificates to resolve Python SSL verification on Windows
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 from dotenv import load_dotenv
 
 # Load local .env if present
@@ -15,19 +23,19 @@ WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent
 class Settings:
     """Immutable project configuration settings."""
 
-    # Gemini LLM Settings
+    # Gemini LLM Settings (verified active model)
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     # Agent Loop Guardrails
     max_turns: int = int(os.getenv("MAX_TURNS", "8"))
     budget_per_task_usd: float = float(os.getenv("BUDGET_PER_TASK_USD", "0.10"))
     permission_policy: str = os.getenv("PERMISSION_POLICY", "ask_on_write")
 
-    # Pricing (Gemini 2.5 Flash rates per 1M tokens)
-    # Source: Google AI Studio published pricing (2026)
-    usd_per_million_input_tokens: float = 0.30
-    usd_per_million_output_tokens: float = 2.50
+    # Pricing (Gemini 3.1 Flash-Lite reference rates per 1M tokens)
+    # Source: Google AI Studio published rates for Flash-Lite
+    usd_per_million_input_tokens: float = 0.075
+    usd_per_million_output_tokens: float = 0.30
 
     # Paths
     workspace_root: Path = WORKSPACE_ROOT

@@ -112,29 +112,170 @@ def dispatch_tool_call(tool_name: str, arguments: Dict[str, Any], is_approved: b
 
 
 def get_gemini_tool_declarations() -> List[Dict[str, Any]]:
-    """Converts Pydantic schemas into Google Gemini FunctionDeclaration dictionaries."""
-    declarations = []
-    for name, meta in TOOL_REGISTRY.items():
-        schema_dict = meta["schema"].model_json_schema()
-        # Clean schema for Gemini API
-        properties = {}
-        for prop_name, prop_meta in schema_dict.get("properties", {}).items():
-            clean_prop = {
-                "type": prop_meta.get("type", "string").upper(),
-                "description": prop_meta.get("description", ""),
-            }
-            if "enum" in prop_meta:
-                clean_prop["enum"] = prop_meta["enum"]
-            properties[prop_name] = clean_prop
-
-        decl = {
-            "name": name,
-            "description": meta["description"],
+    """Returns validated Google Gemini FunctionDeclaration dictionaries for all 8 tools."""
+    return [
+        {
+            "name": "inspect_dataset",
+            "description": "Returns row count, column inventory, detected types, date range, and preview sample rows.",
             "parameters": {
                 "type": "OBJECT",
-                "properties": properties,
-                "required": schema_dict.get("required", []),
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "sample_size": {"type": "INTEGER", "description": "Number of preview sample rows to return."},
+                },
+                "required": ["session_id"],
             },
-        }
-        declarations.append(decl)
-    return declarations
+        },
+        {
+            "name": "validate_dataset",
+            "description": "Audits CSV data against contract rules, returns quarantined rows count, issues, and profit availability.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "summarize_sales",
+            "description": "Calculates total orders, net units sold, net revenue, and profit/margin (if unit cost available).",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "start_date": {"type": "STRING", "description": "Optional ISO start date filter (YYYY-MM-DD)."},
+                    "end_date": {"type": "STRING", "description": "Optional ISO end date filter (YYYY-MM-DD)."},
+                    "group_by": {
+                        "type": "STRING",
+                        "enum": ["category", "region", "product"],
+                        "description": "Optional grouping dimension.",
+                    },
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "rank_products",
+            "description": "Ranks top or bottom products by revenue, units sold, or profit with revenue share percentages.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "metric": {
+                        "type": "STRING",
+                        "enum": ["revenue", "units", "profit"],
+                        "description": "Ranking metric.",
+                    },
+                    "top_n": {"type": "INTEGER", "description": "Number of top products to return."},
+                    "ascending": {"type": "BOOLEAN", "description": "True for lowest/bottom, False for highest/top."},
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "compare_periods",
+            "description": "Compares revenue and units between two date windows (Period A vs Period B) with growth deltas.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "period_a": {
+                        "type": "OBJECT",
+                        "description": "Baseline period A window.",
+                        "properties": {
+                            "start_date": {"type": "STRING", "description": "Start date (YYYY-MM-DD)."},
+                            "end_date": {"type": "STRING", "description": "End date (YYYY-MM-DD)."},
+                        },
+                        "required": ["start_date", "end_date"],
+                    },
+                    "period_b": {
+                        "type": "OBJECT",
+                        "description": "Comparison period B window.",
+                        "properties": {
+                            "start_date": {"type": "STRING", "description": "Start date (YYYY-MM-DD)."},
+                            "end_date": {"type": "STRING", "description": "End date (YYYY-MM-DD)."},
+                        },
+                        "required": ["start_date", "end_date"],
+                    },
+                },
+                "required": ["session_id", "period_a", "period_b"],
+            },
+        },
+        {
+            "name": "detect_anomalies",
+            "description": "Identifies statistical outlier sales transactions using Z-score or IQR thresholds.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "column": {
+                        "type": "STRING",
+                        "enum": ["revenue", "quantity", "unit_price"],
+                        "description": "Column to inspect for outliers.",
+                    },
+                    "method": {
+                        "type": "STRING",
+                        "enum": ["zscore", "iqr"],
+                        "description": "Outlier detection algorithm.",
+                    },
+                    "threshold": {"type": "NUMBER", "description": "Statistical threshold sensitivity."},
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "segment_sales",
+            "description": "Segments sales volume and net revenue across dimensions like category or region.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "dimension": {
+                        "type": "STRING",
+                        "enum": ["category", "region"],
+                        "description": "Primary segment dimension.",
+                    },
+                    "secondary_dimension": {
+                        "type": "STRING",
+                        "enum": ["category", "region"],
+                        "description": "Optional secondary dimension.",
+                    },
+                },
+                "required": ["session_id", "dimension"],
+            },
+        },
+        {
+            "name": "generate_report",
+            "description": "WRITE ACTION (approval required): Writes a formatted executive markdown report to disk in reports/.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "session_id": {"type": "STRING", "description": "Active session identifier."},
+                    "title": {"type": "STRING", "description": "Executive report title."},
+                    "sections": {
+                        "type": "ARRAY",
+                        "description": "Report content sections.",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "heading": {"type": "STRING", "description": "Section heading."},
+                                "content": {"type": "STRING", "description": "Section narrative content."},
+                            },
+                            "required": ["heading", "content"],
+                        },
+                    },
+                    "format": {
+                        "type": "STRING",
+                        "enum": ["markdown", "csv"],
+                        "description": "Report output format.",
+                    },
+                    "approval_token": {
+                        "type": "STRING",
+                        "description": "One-time session confirmation authorization token.",
+                    },
+                },
+                "required": ["session_id", "title", "sections"],
+            },
+        },
+    ]

@@ -4,6 +4,13 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 from google import genai
 from google.genai import types
 
@@ -57,7 +64,7 @@ class RetailMindAgent:
         budget_cap_usd: Optional[float] = None,
         permission_policy: Optional[str] = None,
     ):
-        self.api_key = api_key or settings.gemini_api_key
+        self.api_key = api_key if api_key is not None else settings.gemini_api_key
         self.model_id = model_id or settings.gemini_model
         self.max_turns = max_turns if max_turns is not None else settings.max_turns
         self.budget_cap_usd = budget_cap_usd if budget_cap_usd is not None else settings.budget_per_task_usd
@@ -123,12 +130,35 @@ class RetailMindAgent:
                 # 1. Pre-flight budget check
                 cost_tracker.pre_flight_check()
 
-                # 2. Call Gemini model
-                response = self.client.models.generate_content(
-                    model=self.model_id,
-                    contents=contents,
-                    config=gen_config,
-                )
+                # 2. Call Gemini model with automatic rate-limit backoff
+                response = None
+                for attempt in range(4):
+                    try:
+                        response = self.client.models.generate_content(
+                            model=self.model_id,
+                            contents=contents,
+                            config=gen_config,
+                        )
+                        break
+                    except Exception as api_err:
+                        err_str = str(api_err)
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                            # Free tier rate limit (5 RPM): pause and retry
+                            import time
+                            time.sleep(20)
+                            if attempt == 3:
+                                raise
+                        elif "503" in err_str or "UNAVAILABLE" in err_str:
+                            # Transient service availability spike: pause and retry
+                            import time
+                            time.sleep(10)
+                            if attempt == 3:
+                                raise
+                        else:
+                            raise
+
+                if response is None:
+                    raise RuntimeError("Failed to obtain response from Gemini API after retries.")
 
                 # 3. Post-flight usage recording & budget update
                 turn_cost = cost_tracker.record_usage(turn, response.usage_metadata)
@@ -191,8 +221,8 @@ class RetailMindAgent:
                         part = types.Part.from_function_response(name=tool_name, response=observation)
                         function_response_parts.append(part)
 
-                    # Feed observations back to Gemini
-                    contents.append(types.Content(role="tool", parts=function_response_parts))
+                    # Feed observations back to Gemini as user role
+                    contents.append(types.Content(role="user", parts=function_response_parts))
 
                 else:
                     # Model provided text final answer without requesting tools

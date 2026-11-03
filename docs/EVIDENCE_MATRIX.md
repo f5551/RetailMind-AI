@@ -6,8 +6,8 @@ Update this matrix ONLY using evidence observed in the running project. Every st
 |---|---|---|---|
 | P1 | One-page agent_spec.md | **PASS** | `agent_spec.md` (47 lines, fits 1 printable page; verified via `pytest tests/test_spec_contracts.py::test_agent_spec_exists_and_fits_one_page`) |
 | P2 | Goal, 5–10 tools, 3 stop conditions, budget, permissions, 3 I/O examples | **PASS** | `agent_spec.md` (1-sentence goal, exactly 8 tools, max_turns=8 + $0.10 cap + final_answer, ask_on_write, 3 synthetic I/O examples; verified via `pytest tests/test_spec_contracts.py::test_agent_spec_contains_mandatory_clauses`) |
-| A1 | Genuine single-agent Gemini tool-calling loop | NOT VERIFIED | |
-| A2 | 5 inputs tested with JSONL traces | NOT VERIFIED | |
+| A1 | Genuine single-agent Gemini tool-calling loop | **PASS** | `src/retailmind/agent/loop.py` using `google-genai` SDK and model `gemini-3.1-flash-lite`. Verified multi-turn function calling, deterministic observation feedback, and `FINAL_ANSWER` termination. Proven in `traces/scenario_1_summary.jsonl` and `tests/test_agent_loop.py`. |
+| A2 | 5 inputs tested with JSONL traces | **PASS** | 5 distinct sales analytics inputs tested against `sample_data/synthetic_sales.csv` with 100% ground-truth mathematical match and genuine multi-turn JSONL traces: `traces/scenario_1_summary.jsonl`, `traces/scenario_2_rankings.jsonl`, `traces/scenario_3_comparison.jsonl`, `traces/scenario_4_anomalies.jsonl`, `traces/scenario_5_validation.jsonl` (and scenario 6 in `traces/scenario_6_report_approval.jsonl`). |
 | M1 | Real MCP server + client and model tool routing | NOT VERIFIED | |
 | M2 | SQLite memory persists after process restart | NOT VERIFIED | |
 | S1 | Executable permissions with denial test | NOT VERIFIED | |
@@ -18,7 +18,7 @@ Update this matrix ONLY using evidence observed in the running project. Every st
 | D2 | Public GitHub repository URL | NOT VERIFIED | |
 | D3 | Public app URL + documented persistent DB | NOT VERIFIED | |
 | D4 | README with setup and deployment | NOT VERIFIED | |
-| T1 | Genuine traces/success_1.jsonl | NOT VERIFIED | |
+| T1 | Genuine traces/success_1.jsonl | **PASS** | `traces/success_1.jsonl` (3,188 tokens, $0.000263 USD paid equivalent, $0.00 Free Tier actual billed, 2 turns, tool call: `summarize_sales`, stop reason: `FINAL_ANSWER`). |
 | T2 | Genuine traces/near_failure_recovery.jsonl | NOT VERIFIED | |
 | T3 | Genuine traces/explicit_failure.jsonl | NOT VERIFIED | |
 | C1 | cost_analysis.md with real average $/task and monthly assumptions | NOT VERIFIED | |
