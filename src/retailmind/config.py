@@ -32,10 +32,12 @@ class Settings:
     budget_per_task_usd: float = float(os.getenv("BUDGET_PER_TASK_USD", "0.10"))
     permission_policy: str = os.getenv("PERMISSION_POLICY", "ask_on_write")
 
-    # Pricing (Gemini 3.1 Flash-Lite reference rates per 1M tokens)
-    # Source: Google AI Studio published rates for Flash-Lite
-    usd_per_million_input_tokens: float = 0.075
-    usd_per_million_output_tokens: float = 0.30
+    # Pricing (Official Gemini API Standard paid-tier reference rates per 1M tokens)
+    # Source: https://ai.google.dev/gemini-api/docs/pricing
+    # Input: $0.25 / 1M, Output (including thinking): $1.50 / 1M, Cached prompt: $0.0625 / 1M
+    usd_per_million_input_tokens: float = 0.25
+    usd_per_million_output_tokens: float = 1.50
+    usd_per_million_cached_tokens: float = 0.0625
 
     # Paths
     workspace_root: Path = WORKSPACE_ROOT

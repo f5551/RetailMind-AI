@@ -3,17 +3,18 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Phase%200%20Complete-success.svg)](docs/STATUS.md)
+[![Status](https://img.shields.io/badge/Phase-Phase%202.1%20Verified-success.svg)](docs/STATUS.md)
 
-**RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
+**RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
 
 ---
 
 ## 📋 Architectural Overview
 
-- **Single Reasoning Agent**: Iterative tool-calling loop using Google Gemini API via official SDK (`google-genai`).
+- **Single Reasoning Agent**: Iterative tool-calling loop using Google Gemini API via official SDK (`google-genai`) with model `gemini-3.1-flash-lite`.
 - **Standard Protocol Integration**: Strict protocol tool routing via Model Context Protocol (`mcp`).
 - **Persistence Layer**: SQLite for durable conversation context, episodic memory, and append-only audit trail.
+- **Cost & Metering Integrity**: Token-level tracking using official Gemini API Standard rates ($0.25/1M input, $1.50/1M output including thinking), with pre/post-flight checks against a $0.10/task budget ceiling.
 - **Safety & Guardrails**:
   - Tripartite loop termination: `max_turns` (default 8), `budget_per_task` (default $0.10 USD), and model `final_answer`.
   - Executable permission gate (`ask_on_write`): read-only queries execute autonomously; write/export actions require human-in-the-loop approval.
@@ -126,9 +127,10 @@ pytest -v tests/test_smoke.py
 
 ## 📜 Capstone Progress & Roadmap
 
-- [x] **Phase 0 — Project Control & Setup**: Repository initialized, strict hygiene configured, dependencies verified, smoke test passing (8/8).
-- [ ] **Phase 1 — Planning & Spec**: One-page `agent_spec.md`, 8 tool schemas, stopping condition rules, and architecture design.
-- [ ] **Phase 2 — Agent Loop & Tool Calling**: Gemini iterative tool loop, 5 test inputs, JSONL traces.
+- [x] **Phase 0 — Project Control & Setup**: Repository initialized, strict hygiene configured, dependencies verified, smoke test passing (9/9).
+- [x] **Phase 1 — Planning & Spec**: One-page `agent_spec.md`, 8 tool contracts, CSV data contract, test plan, and architecture design passing (6/6).
+- [x] **Phase 2 — Agent Loop & Tool Calling**: Gemini iterative tool loop, 5 test inputs, JSONL traces, deterministic tools passing (16/16).
+- [x] **Phase 2.1 — Final Quality & Cost Verification**: Corrected standard pricing ($0.25/$1.50), missing-cost test, termination tests, regression tests (35/35 passing).
 - [ ] **Phase 3 — MCP & Persistent Memory**: MCP server/client routing, SQLite restart persistence.
 - [ ] **Phase 4 — Safety, Approvals & Cost Metering**: Hostile injection tests, write approval gating, USD cost tracking.
 - [ ] **Phase 5 — Streamlit UI & Public Deployment**: Interactive UI, cloud deployment, final submission validation.

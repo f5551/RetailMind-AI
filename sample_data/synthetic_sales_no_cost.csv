@@ -1,0 +1,16 @@
+order_id,date,product,category,quantity,unit_price,region
+ORD-1001,2026-01-05,Wireless Mouse,Electronics,5,25.00,North
+ORD-1002,2026-01-07,Mechanical Keyboard,Electronics,2,80.00,North
+ORD-1003,2026-01-10,USB-C Hub,Accessories,10,20.00,South
+ORD-1004,2026-01-15,Gaming Headset,Electronics,3,60.00,West
+ORD-1005,2026-01-18,Laptop Stand,Accessories,4,35.00,East
+ORD-1006,2026-01-22,Wireless Mouse,Electronics,8,25.00,East
+ORD-1007,2026-01-25,Mechanical Keyboard,Electronics,1,80.00,South
+ORD-1008,2026-01-28,Monitor Light Bar,Accessories,6,45.00,North
+ORD-1009,2026-02-02,USB-C Hub,Accessories,15,20.00,West
+ORD-1010,2026-02-05,Wireless Mouse,Electronics,6,25.00,South
+ORD-1011,2026-02-12,Gaming Headset,Electronics,5,60.00,North
+ORD-1012,2026-02-18,Laptop Stand,Accessories,8,35.00,South
+ORD-1013,2026-02-22,Monitor Light Bar,Accessories,4,45.00,East
+ORD-1014,2026-02-25,Mechanical Keyboard,Electronics,3,80.00,West
+ORD-1015,2026-02-28,USB-C Hub,Accessories,7,20.00,North

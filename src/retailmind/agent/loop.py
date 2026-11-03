@@ -269,7 +269,7 @@ class RetailMindAgent:
             stop_reason=stop_reason,
             turns_executed=turns_executed,
             total_cost_usd=cost_tracker.cumulative_cost_usd,
-            total_tokens=cost_tracker.total_prompt_tokens + cost_tracker.total_candidates_tokens,
+            total_tokens=cost_tracker.total_tokens,
             tool_calls_count=tool_calls_count,
             trace_path=trace_file_saved,
             cost_summary=cost_tracker.to_dict(),
