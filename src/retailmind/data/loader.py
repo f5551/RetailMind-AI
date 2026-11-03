@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+
+logger = logging.getLogger("retailmind.data.loader")
 
 # Forbidden leading formula injection characters
 FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -62,6 +65,24 @@ def sanitize_cell_value(val: Any) -> Any:
         if val.startswith(FORMULA_INJECTION_PREFIXES):
             return "'" + val
     return val
+
+
+def check_synthetic_data_compliance(raw_df: pd.DataFrame) -> Tuple[bool, str]:
+    """Enforces synthetic-data-only restrictions in unauthenticated demo environments.
+
+    Rejects datasets containing Personally Identifiable Information (PII) or confidential customer identifiers.
+    """
+    pii_keywords = [
+        "email", "ssn", "social_security", "credit_card", "card_number",
+        "cvv", "passport", "phone", "telephone", "password", "secret",
+        "customer_name", "first_name", "last_name", "home_address",
+        "street_address", "salary", "national_id"
+    ]
+    columns_lower = [str(col).lower().strip() for col in raw_df.columns]
+    flagged = [col for col in columns_lower if any(kw in col for kw in pii_keywords)]
+    if flagged:
+        return False, f"SYNTHETIC_DATA_POLICY_VIOLATION: Unauthenticated demo mode enforces synthetic sales data only. Real customer PII/confidential columns detected: {', '.join(flagged)}."
+    return True, ""
 
 
 class DatasetManager:
@@ -162,6 +183,14 @@ class DatasetManager:
         # Enforce 50,000 row count limit
         if len(raw_df) > 50000:
             raise ValueError("Dataset exceeds 50,000 maximum allowed row count limit.")
+
+        # Enforce synthetic-data-only policy when in unauthenticated demo mode
+        is_authenticated = bool(os.getenv("RETAILMIND_AUTH_TOKEN") or os.getenv("RETAILMIND_AUTH_MODE") == "production")
+        if not is_authenticated:
+            is_compliant, reason = check_synthetic_data_compliance(raw_df)
+            if not is_compliant:
+                logger.error("Dataset registration rejected: %s", reason)
+                raise ValueError(reason)
 
         processed = cls._process_raw_dataframe(raw_df)
         csv_text = raw_df.to_csv(index=False)

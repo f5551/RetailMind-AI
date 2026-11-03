@@ -56,6 +56,47 @@ CRITICAL OPERATIONAL RULES:
 """
 
 
+def extract_verified_financial_facts(tool_calls_history: List[Dict[str, Any]]) -> str:
+    """Extracts deterministically calculated financial facts strictly from successful tool outputs.
+
+    Ensures that persistent verified memory is grounded in deterministic tool observations,
+    completely preventing model hallucinations from being stored as verified facts.
+    """
+    facts = []
+    for tc in tool_calls_history:
+        if tc.get("status") != "success":
+            continue
+        tool_name = tc.get("tool")
+        obs = tc.get("observation", {})
+        if not isinstance(obs, dict):
+            continue
+        if tool_name == "summarize_sales":
+            facts.append(
+                f"Sales Summary: Orders={obs.get('total_orders')}, Units={obs.get('net_units')}, Revenue=${obs.get('net_revenue')}"
+                + (f", Profit=${obs.get('net_profit')}" if obs.get("has_cost_data") else ", Profit=UNAVAILABLE")
+            )
+        elif tool_name == "rank_products":
+            rankings = obs.get("rankings", [])
+            top_p = [p.get("product") for p in rankings[:3] if isinstance(p, dict)]
+            facts.append(f"Product Rankings (Metric: {obs.get('metric')}): Top={top_p}")
+        elif tool_name == "compare_periods":
+            variance = obs.get("variance", {})
+            facts.append(
+                f"Period Comparison: Delta=${variance.get('revenue_delta')}, Growth={variance.get('revenue_growth_status')}"
+            )
+        elif tool_name == "detect_anomalies":
+            facts.append(f"Anomalies: Count={obs.get('anomalies_count')}, Method={obs.get('method_used')}")
+        elif tool_name == "segment_sales":
+            facts.append(f"Segmentation: Dimension={obs.get('dimension')}, Segments Count={len(obs.get('segments', []))}")
+        elif tool_name == "inspect_dataset":
+            facts.append(f"Dataset Inspection: Rows={obs.get('total_rows')}, Columns={obs.get('column_count')}")
+        elif tool_name == "validate_dataset":
+            facts.append(f"Dataset Validation: Status={obs.get('validation_status')}, Valid Rows={obs.get('valid_rows_count')}")
+        elif tool_name == "generate_report":
+            facts.append(f"Report Generated: File={obs.get('file_path')}, Format={obs.get('format')}")
+    return " | ".join(facts) if facts else "Deterministic tool execution verified."
+
+
 @dataclass
 class AgentResult:
     task_id: str
@@ -443,6 +484,7 @@ class RetailMindAgent:
                             "is_approved": is_approved,
                             "transport": self.execution_transport,
                             "status": observation.get("status", "unknown") if isinstance(observation, dict) else "success",
+                            "observation": observation,
                         }
                         tool_calls_history.append(call_summary)
 
@@ -511,7 +553,13 @@ class RetailMindAgent:
             # A final answer without tool calls or with tool failures is NEVER independently verified
             is_verified = (stop_reason == "FINAL_ANSWER") and all_tools_succeeded
 
-            summary_text = f"Verified: {final_answer}" if is_verified else f"Unverified: {final_answer}"
+            if is_verified:
+                # Ground verified memory strictly in deterministic tool outputs.
+                # Model-generated text / hallucinations are NEVER stored as verified financial metrics.
+                deterministic_facts = extract_verified_financial_facts(tool_calls_history)
+                summary_text = f"[DETERMINISTIC VERIFIED METRICS]: {deterministic_facts}"
+            else:
+                summary_text = f"[UNVERIFIED MODEL OUTPUT]: {final_answer}"
 
             self.memory_manager.record_task_memory(
                 user_id=user_id,

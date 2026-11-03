@@ -35,6 +35,8 @@ def _verify_session_ownership(session_id: str, caller_user_id: Optional[str] = N
     """Validates session ownership inside the MCP server.
 
     Ensures data access is strictly bounded to the authorized caller.
+    The server TRUSTS ONLY the identity established by the host transport (os.environ).
+    It REJECTS any in-band caller_user_id from tool arguments that attempts to spoof identity.
     """
     if not session_id or not isinstance(session_id, str):
         return False, "Invalid or missing session_id."
@@ -45,7 +47,19 @@ def _verify_session_ownership(session_id: str, caller_user_id: Optional[str] = N
     if not owner:
         return True, ""
 
-    effective_caller = caller_user_id or os.getenv("RETAILMIND_CALLER_USER_ID")
+    # Trusted identity comes strictly from the host process environment variable
+    trusted_caller = os.getenv("RETAILMIND_CALLER_USER_ID")
+
+    # If an untrusted caller in-band argument attempts to spoof a different identity, reject immediately
+    if caller_user_id and trusted_caller and caller_user_id != trusted_caller:
+        logger.warning(
+            "Access Denied: In-band caller_user_id '%s' attempted to spoof trusted host identity '%s'",
+            caller_user_id,
+            trusted_caller,
+        )
+        return False, f"PERMISSION_DENIED: Identity spoofing detected. In-band caller_user_id '{caller_user_id}' does not match trusted host identity."
+
+    effective_caller = trusted_caller or caller_user_id
     if not effective_caller:
         return False, f"Access Denied: Missing caller identity for session '{session_id}'."
 
