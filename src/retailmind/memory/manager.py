@@ -146,7 +146,7 @@ class SQLiteMemoryManager:
             return []
 
         sql = """
-        SELECT query, verified_summary, created_at
+        SELECT task_id, query, verified_summary, tool_calls_json, created_at
         FROM analytical_memory
         WHERE user_id = ?
           AND dataset_fingerprint = ?
@@ -170,10 +170,21 @@ class SQLiteMemoryManager:
                     if len(summary) > 400:
                         summary = summary[:400] + "..."
                     
+                    tool_calls_data = []
+                    raw_tc = r["tool_calls_json"] if "tool_calls_json" in r.keys() else None
+                    if raw_tc:
+                        try:
+                            tool_calls_data = json.loads(raw_tc)
+                        except Exception:
+                            tool_calls_data = []
+
                     entry = {
+                        "task_id": r["task_id"] if "task_id" in r.keys() else "",
                         "query": r["query"],
                         "summary": summary,
                         "timestamp": r["created_at"],
+                        "created_at": r["created_at"],
+                        "tool_calls": tool_calls_data,
                     }
                     entry_len = len(entry["query"]) + len(entry["summary"])
                     if accumulated_chars + entry_len > max_chars:

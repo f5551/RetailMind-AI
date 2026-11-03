@@ -816,8 +816,22 @@ def test_b10_mcp_trusted_identity_and_synthetic_data_enforcement():
         assert is_bundled_compliant is True
         assert bundled_reason == ""
 
-    # 4. Authenticated session permits custom CSV upload
+    # 4. A generic production environment flag CANNOT enable unrestricted uploads
     os.environ["RETAILMIND_AUTH_MODE"] = "production"
+    try:
+        is_mode_compliant, mode_reason = verify_approved_synthetic_dataset(
+            "custom_customer_data.csv",
+            df_arbitrary,
+            force_test_mode=False,
+        )
+        assert is_mode_compliant is False
+        assert "UNAUTHENTICATED_DEMO_RESTRICTION" in mode_reason
+    finally:
+        os.environ.pop("RETAILMIND_AUTH_MODE", None)
+
+    # 5. Genuine server-validated token authentication permits custom CSV upload
+    os.environ["RETAILMIND_SERVER_AUTH_SECRET"] = "valid_server_secret_key_xyz"
+    os.environ["RETAILMIND_AUTH_TOKEN"] = "valid_server_secret_key_xyz"
     try:
         is_auth_compliant, auth_reason = verify_approved_synthetic_dataset(
             "custom_customer_data.csv",
@@ -827,5 +841,6 @@ def test_b10_mcp_trusted_identity_and_synthetic_data_enforcement():
         assert is_auth_compliant is True
         assert auth_reason == ""
     finally:
-        os.environ.pop("RETAILMIND_AUTH_MODE", None)
+        os.environ.pop("RETAILMIND_SERVER_AUTH_SECRET", None)
+        os.environ.pop("RETAILMIND_AUTH_TOKEN", None)
 

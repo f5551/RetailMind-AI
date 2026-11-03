@@ -75,6 +75,7 @@ def verify_approved_synthetic_dataset(
     csv_path_or_df: Any,
     raw_df: pd.DataFrame,
     force_test_mode: Optional[bool] = None,
+    auth_token: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Enforces that unauthenticated public demo users can ONLY load approved bundled synthetic datasets.
 
@@ -87,8 +88,14 @@ def verify_approved_synthetic_dataset(
             return True, ""
         # If force_test_mode is explicitly False, enforce strict check even in tests
 
-    # Allow authenticated users
-    is_authenticated = bool(os.getenv("RETAILMIND_AUTH_TOKEN") or os.getenv("RETAILMIND_AUTH_MODE") == "production")
+    # Strict server-validated authentication:
+    # A generic environment flag such as RETAILMIND_AUTH_MODE=production MUST NOT enable unrestricted uploads.
+    # Requires a real server-validated authentication secret/token to enable custom business uploads.
+    verified_server_token = os.getenv("RETAILMIND_SERVER_AUTH_SECRET") or os.getenv("RETAILMIND_AUTH_SECRET")
+    candidate_token = auth_token or os.getenv("RETAILMIND_AUTH_TOKEN")
+    is_authenticated = bool(
+        verified_server_token and candidate_token and candidate_token == verified_server_token
+    )
     if is_authenticated:
         return True, ""
 
@@ -196,6 +203,7 @@ class DatasetManager:
         session_id: str,
         csv_path_or_df: Any,
         user_id: Optional[str] = None,
+        auth_token: Optional[str] = None,
     ) -> ProcessedDataset:
         """Loads, cleans, validates, and registers a dataset for a session.
 
@@ -236,7 +244,7 @@ class DatasetManager:
             raise ValueError("Dataset exceeds 50,000 maximum allowed row count limit.")
 
         # Enforce approved synthetic dataset restriction in unauthenticated public demo mode
-        is_compliant, reason = verify_approved_synthetic_dataset(csv_path_or_df, raw_df)
+        is_compliant, reason = verify_approved_synthetic_dataset(csv_path_or_df, raw_df, auth_token=auth_token)
         if not is_compliant:
             logger.error("Dataset registration rejected: %s", reason)
             raise ValueError(reason)

@@ -52,6 +52,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "🛡️ Security & Audit Trail",
         "ar": "🛡️ سجل الأمان والتدقيق",
     },
+    "nav_menu": {
+        "en": "Navigation Menu",
+        "ar": "قائمة التنقل",
+    },
     "lang_toggle_label": {
         "en": "Language / اللغة",
         "ar": "اللغة / Language",
@@ -88,9 +92,17 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "⚡ Load Synthetic Sample Data",
         "ar": "⚡ تحميل بيانات مبيعات تجريبية",
     },
+    "btn_load_sample_no_cost": {
+        "en": "⚡ Load Sample Data (No Cost)",
+        "ar": "⚡ تحميل بيانات تجريبية (بدون تكلفة)",
+    },
     "spinner_load_sample": {
         "en": "Ingesting sample retail dataset...",
         "ar": "جارٍ استيراد بيانات المبيعات التجريبية...",
+    },
+    "spinner_load_sample_no_cost": {
+        "en": "Ingesting missing-cost retail dataset...",
+        "ar": "جارٍ استيراد بيانات المبيعات بدون تكلفة...",
     },
     "guardrails_header": {
         "en": "⚙️ Guardrails & Runtime",

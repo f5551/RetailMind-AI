@@ -42,7 +42,7 @@ class Settings:
     # Paths
     workspace_root: Path = WORKSPACE_ROOT
     data_dir: Path = Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data"))
-    reports_dir: Path = WORKSPACE_ROOT / "reports"
+    reports_dir: Path = Path(os.getenv("RETAILMIND_REPORTS_DIR", Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data")) / "reports")) if os.getenv("RETAILMIND_DATA_DIR") else (WORKSPACE_ROOT / "reports")
     traces_dir: Path = WORKSPACE_ROOT / "traces"
     sample_data_dir: Path = WORKSPACE_ROOT / "sample_data"
     sqlite_db_path: Path = Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data")) / os.getenv("SQLITE_DB_NAME", "retailmind.db")

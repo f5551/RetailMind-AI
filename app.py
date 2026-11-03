@@ -218,7 +218,7 @@ with st.sidebar:
         st.session_state.current_view_key = view_keys[idx]
 
     selected_nav_label = st.radio(
-        t("nav_menu", lang) if "nav_menu" in t("nav_menu", lang) else "Menu",
+        t("nav_menu", lang),
         nav_display_names,
         index=default_idx,
         label_visibility="collapsed",
@@ -243,6 +243,13 @@ with st.sidebar:
         if st.button(t("btn_load_sample", lang), use_container_width=True):
             with st.spinner(t("spinner_load_sample", lang)):
                 load_dataset_from_path(sample_csv_path, "synthetic_sales.csv")
+                st.rerun()
+
+    sample_no_cost_path = WORKSPACE_ROOT / "sample_data" / "synthetic_sales_no_cost.csv"
+    if sample_no_cost_path.exists():
+        if st.button(t("btn_load_sample_no_cost", lang), use_container_width=True):
+            with st.spinner(t("spinner_load_sample_no_cost", lang)):
+                load_dataset_from_path(sample_no_cost_path, "synthetic_sales_no_cost.csv")
                 st.rerun()
 
     st.markdown("---")
@@ -535,14 +542,25 @@ elif active_view == "agent":
     # Download Button for last generated report
     if st.session_state.last_generated_report:
         report_p = Path(st.session_state.last_generated_report)
-        if report_p.exists():
-            mime_type = "text/csv" if report_p.suffix.lower() == ".csv" else "text/markdown"
-            st.download_button(
-                label=t("btn_download_report", lang, filename=report_p.name),
-                data=report_p.read_text(encoding="utf-8"),
-                file_name=report_p.name,
-                mime=mime_type,
-            )
+        if not report_p.is_absolute():
+            report_p = settings.workspace_root / report_p
+        try:
+            resolved_report = report_p.resolve()
+            resolved_reports_dir = settings.reports_dir.resolve()
+            # Enforce strict path scoping: report must reside strictly within authorized reports directory
+            if resolved_report.exists() and (
+                resolved_report.is_relative_to(resolved_reports_dir)
+                or str(resolved_report).startswith(str(resolved_reports_dir))
+            ):
+                mime_type = "text/csv" if resolved_report.suffix.lower() == ".csv" else "text/markdown"
+                st.download_button(
+                    label=t("btn_download_report", lang, filename=resolved_report.name),
+                    data=resolved_report.read_text(encoding="utf-8"),
+                    file_name=resolved_report.name,
+                    mime=mime_type,
+                )
+        except Exception:
+            pass
 
     # Chat Input Box
     user_input = st.chat_input(t("chat_input_prompt", lang)) or suggested_prompt
@@ -671,9 +689,10 @@ elif active_view == "memory":
             st.info(t("info_no_memories", lang))
         else:
             for idx, r in enumerate(records, 1):
-                header = t("memory_item_expander", lang, idx=idx, query=r.get("query"), date=r.get("created_at"))
+                rec_date = r.get("created_at") or r.get("timestamp") or ""
+                header = t("memory_item_expander", lang, idx=idx, query=r.get("query"), date=rec_date)
                 with st.expander(header, expanded=(idx == 1)):
-                    st.markdown(t("lbl_task_id", lang, task_id=r.get("task_id")))
+                    st.markdown(t("lbl_task_id", lang, task_id=r.get("task_id") or "N/A"))
                     st.markdown(t("lbl_verified_summary", lang, summary=r.get("summary")))
                     if r.get("tool_calls"):
                         st.json(r.get("tool_calls"))
