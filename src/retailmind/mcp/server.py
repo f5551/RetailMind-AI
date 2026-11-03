@@ -41,12 +41,6 @@ def _verify_session_ownership(session_id: str, caller_user_id: Optional[str] = N
     if not session_id or not isinstance(session_id, str):
         return False, "Invalid or missing session_id."
 
-    from src.retailmind.data.loader import DatasetManager
-
-    owner = DatasetManager.get_session_owner(session_id)
-    if not owner:
-        return True, ""
-
     # Trusted identity comes strictly from the host process environment variable
     trusted_caller = os.getenv("RETAILMIND_CALLER_USER_ID")
 
@@ -58,6 +52,12 @@ def _verify_session_ownership(session_id: str, caller_user_id: Optional[str] = N
             trusted_caller,
         )
         return False, f"PERMISSION_DENIED: Identity spoofing detected. In-band caller_user_id '{caller_user_id}' does not match trusted host identity."
+
+    from src.retailmind.data.loader import DatasetManager
+
+    owner = DatasetManager.get_session_owner(session_id)
+    if not owner:
+        return True, ""
 
     effective_caller = trusted_caller or caller_user_id
     if not effective_caller:

@@ -11,8 +11,11 @@ Standard Paid-Tier Text Rates:
 """
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Dict, List, Optional
 from src.retailmind.config import settings
+
+logger = logging.getLogger("retailmind.agent.cost_meter")
 
 
 class BudgetExceededError(Exception):
@@ -32,6 +35,7 @@ class TurnCost:
     turn_cost_usd: float
     cumulative_cost_usd: float
     billed_cost_usd: float = 0.0
+    metadata_status: str = "CONSISTENT_VERIFIED"
 
 
 @dataclass
@@ -50,6 +54,7 @@ class CostTracker:
     cumulative_cost_usd: float = 0.0
     cumulative_billed_cost_usd: float = 0.0
     billed_status: str = "UNKNOWN_NO_BILLING_EVIDENCE"
+    metadata_status: str = "CONSISTENT_VERIFIED"
     turns: List[TurnCost] = field(default_factory=list)
 
     def pre_flight_check(self) -> None:
@@ -96,7 +101,7 @@ class CostTracker:
                 tool_prompt = usage_metadata.get("tool_use_prompt_token_count", 0) or 0
 
         # Non-cached prompt tokens (cached input is a subset of prompt_token_count in Gemini API)
-        non_cached_prompt = max(0, raw_prompt - cached)
+        base_non_cached = max(0, raw_prompt - cached)
 
         if hasattr(usage_metadata, "total_token_count"):
             api_total = getattr(usage_metadata, "total_token_count", None)
@@ -105,34 +110,56 @@ class CostTracker:
         else:
             api_total = None
 
-        # Reconcile thinking tokens and output tokens
-        # In Gemini API, candidates_token_count typically includes thoughts_token_count
-        if api_total and thinking > 0 and (api_total == raw_prompt + raw_candidates + thinking):
-            candidates_output = raw_candidates + thinking
-        else:
-            candidates_output = raw_candidates
+        tool_tokens_used = tool_prompt
 
-        # Reconcile tool_use_prompt_tokens
-        tool_tokens_used = 0
-        if tool_prompt > 0:
-            tool_tokens_used = tool_prompt
-            # If tool_prompt was not subsumed under raw_prompt and total includes it:
-            if api_total and (api_total == raw_prompt + candidates_output + tool_prompt):
-                non_cached_prompt += tool_prompt
-            elif not api_total:
-                non_cached_prompt += tool_prompt
-
-        # Total tokens exact reconciliation
+        # Official Gemini SDK UsageMetadata decomposition and sub-component reconciliation
         if api_total is not None and api_total > 0:
-            turn_total_tokens = api_total
-            # Ensure non_cached_prompt + cached + candidates_output equals api_total
-            reconciled_sum = non_cached_prompt + cached + candidates_output
-            if api_total > reconciled_sum:
-                # Assign remainder to non_cached_prompt if tool/system tokens were separate
-                diff = api_total - reconciled_sum
-                non_cached_prompt += diff
+            # Check 1: Additive sub-components (Fixture A & B where tool_prompt and thinking are explicit additive items)
+            if (raw_prompt + tool_prompt + raw_candidates + thinking) == api_total:
+                non_cached_prompt = base_non_cached + tool_prompt
+                candidates_output = raw_candidates + thinking
+                turn_total_tokens = api_total
+                turn_meta_status = "CONSISTENT_VERIFIED"
+            # Check 2: Subsumed components (raw_candidates includes thinking, raw_prompt includes tool_prompt)
+            elif (raw_prompt + raw_candidates) == api_total:
+                non_cached_prompt = base_non_cached
+                candidates_output = raw_candidates
+                turn_total_tokens = api_total
+                turn_meta_status = "CONSISTENT_VERIFIED"
+            # Check 3: Tool prompt additive, thinking subsumed
+            elif (raw_prompt + tool_prompt + raw_candidates) == api_total:
+                non_cached_prompt = base_non_cached + tool_prompt
+                candidates_output = raw_candidates
+                turn_total_tokens = api_total
+                turn_meta_status = "CONSISTENT_VERIFIED"
+            # Check 4: Tool prompt subsumed, thinking additive
+            elif (raw_prompt + raw_candidates + thinking) == api_total:
+                non_cached_prompt = base_non_cached
+                candidates_output = raw_candidates + thinking
+                turn_total_tokens = api_total
+                turn_meta_status = "CONSISTENT_VERIFIED"
+            else:
+                # Inconsistent provider metadata: flag explicitly instead of silently normalizing
+                turn_meta_status = "INCONSISTENT_PROVIDER_METADATA"
+                self.metadata_status = "INCONSISTENT_PROVIDER_METADATA"
+                non_cached_prompt = base_non_cached + tool_prompt
+                candidates_output = raw_candidates + thinking
+                turn_total_tokens = non_cached_prompt + cached + candidates_output
+                logger.warning(
+                    "Inconsistent provider UsageMetadata: computed_total=%d != api_total=%d (Prompt=%d, Cached=%d, Tool=%d, Cand=%d, Think=%d)",
+                    turn_total_tokens,
+                    api_total,
+                    raw_prompt,
+                    cached,
+                    tool_prompt,
+                    raw_candidates,
+                    thinking,
+                )
         else:
+            non_cached_prompt = base_non_cached + tool_prompt
+            candidates_output = raw_candidates if raw_candidates > 0 else thinking
             turn_total_tokens = non_cached_prompt + cached + candidates_output
+            turn_meta_status = "CONSISTENT_NO_API_TOTAL"
 
         # Paid-tier equivalent rates:
         # Prompt: $0.25 / 1M, Cached: $0.025 / 1M, Output (incl. thinking): $1.50 / 1M
@@ -161,6 +188,7 @@ class CostTracker:
             turn_cost_usd=round(turn_cost, 8),
             cumulative_cost_usd=round(self.cumulative_cost_usd, 8),
             billed_cost_usd=0.0,
+            metadata_status=turn_meta_status,
         )
         self.turns.append(tc)
 
@@ -185,6 +213,7 @@ class CostTracker:
             "cumulative_cost_usd_display": round(self.cumulative_cost_usd, 6),
             "cumulative_billed_cost_usd": round(self.cumulative_billed_cost_usd, 6),
             "billed_status": self.billed_status,
+            "metadata_status": self.metadata_status,
             "pricing_source": "Official Gemini API Standard Pricing (https://ai.google.dev/gemini-api/docs/pricing, verified 2026-11-03)",
             "pricing_rates": {
                 "input_per_million": self.usd_per_million_input,

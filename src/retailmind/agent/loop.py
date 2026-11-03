@@ -555,9 +555,11 @@ class RetailMindAgent:
 
             if is_verified:
                 # Ground verified memory strictly in deterministic tool outputs.
-                # Model-generated text / hallucinations are NEVER stored as verified financial metrics.
+                # Include explicit provenance (tools used, task_id, dataset fingerprint)
                 deterministic_facts = extract_verified_financial_facts(tool_calls_history)
-                summary_text = f"[DETERMINISTIC VERIFIED METRICS]: {deterministic_facts}"
+                tools_used = [tc.get("tool") for tc in tool_calls_history if tc.get("status") == "success"]
+                provenance_str = f"tools={tools_used}, task_id={task_id}, dataset_fingerprint={dataset_fingerprint[:16]}"
+                summary_text = f"[DETERMINISTIC VERIFIED METRICS (Provenance: {provenance_str})]: {deterministic_facts}"
             else:
                 summary_text = f"[UNVERIFIED MODEL OUTPUT]: {final_answer}"
 

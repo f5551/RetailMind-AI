@@ -518,63 +518,137 @@ def test_b7_authorization_service_fails_closed():
 # FINAL VERIFICATION GATE: B8, B9, B10
 # -----------------------------------------------------------------------------
 def test_b8_gemini_cost_reconciliation_exact_0006100():
-    """Prove exact mathematical reconciliation of the 1,300-token fixture to $0.0006100 USD.
+    """Verify Gemini UsageMetadata token reconciliation and exact pricing under Fixtures A and B.
 
-    Explains the difference against $0.0006375 (which arose from a 1,200/500 prompt breakdown
-    or improper double-counting of subsumed tool tokens).
+    Also tests flagging of inconsistent provider metadata instead of silent normalization,
+    and explains the difference between $0.0006375 and $0.0006100.
     """
-    tracker = CostTracker(
+    # -------------------------------------------------------------------------
+    # Fixture A:
+    # prompt=920, cached=400, candidates=180, thoughts=120, tool_use=80, total=1300
+    # Expected Cost: $0.0006100 USD
+    # -------------------------------------------------------------------------
+    tracker_a = CostTracker(
         budget_cap_usd=0.10,
         usd_per_million_input=0.25,
         usd_per_million_output=1.50,
         usd_per_million_cached=0.025,
     )
 
-    # 1,300-token fixture:
-    # prompt_token_count = 1000 (of which 400 is cached, and 80 is tool_use_prompt)
-    # candidates_token_count = 300 (of which 120 is thinking)
-    # total_token_count = 1300
-    mock_usage = {
-        "prompt_token_count": 1000,
+    fixture_a = {
+        "prompt_token_count": 920,
         "cached_content_token_count": 400,
-        "candidates_token_count": 300,
+        "candidates_token_count": 180,
         "thoughts_token_count": 120,
         "tool_use_prompt_token_count": 80,
         "total_token_count": 1300,
     }
 
-    turn = tracker.record_usage(1, mock_usage)
+    turn_a = tracker_a.record_usage(1, fixture_a)
 
-    # 1. Exact token reconciliation
-    assert turn.total_tokens == 1300
-    assert turn.prompt_tokens == 600       # Non-cached prompt = 1000 - 400 = 600
-    assert turn.cached_tokens == 400       # Cached prompt = 400
-    assert turn.candidates_tokens == 300   # Candidates = 300 (includes 120 thinking tokens)
-    assert turn.thinking_tokens == 120
-    assert turn.tool_use_tokens == 80
+    # 1. Verification of Fixture A token reconciliation:
+    # Non-cached prompt: (920 - 400) + 80 = 600
+    # Cached prompt: 400
+    # Total input: 600 + 400 = 1000
+    # Candidates output (including thoughts): 180 + 120 = 300
+    # Total tokens: 1000 + 300 = 1300
+    assert turn_a.total_tokens == 1300
+    assert turn_a.prompt_tokens == 600
+    assert turn_a.cached_tokens == 400
+    assert turn_a.candidates_tokens == 300
+    assert turn_a.thinking_tokens == 120
+    assert turn_a.tool_use_tokens == 80
+    assert turn_a.metadata_status == "CONSISTENT_VERIFIED"
 
-    # 2. Exact cost computation:
+    # Exact cost calculation for Fixture A:
     # non_cached_prompt_cost: 600 * 0.25 / 1e6   = $0.0001500
     # cached_prompt_cost:     400 * 0.025 / 1e6  = $0.0000100
     # candidates_cost:        300 * 1.50 / 1e6   = $0.0004500
     # Sum: $0.0001500 + $0.0000100 + $0.0004500  = $0.0006100 USD
-    expected_exact_cost = 0.0006100
-    assert abs(turn.turn_cost_usd - expected_exact_cost) < 1e-9
-    assert abs(tracker.cumulative_cost_usd - expected_exact_cost) < 1e-9
+    expected_cost_a = 0.0006100
+    assert abs(turn_a.turn_cost_usd - expected_cost_a) < 1e-9
+    assert abs(tracker_a.cumulative_cost_usd - expected_cost_a) < 1e-9
 
-    # 3. Mathematical proof of the $0.0006375 difference:
+    # -------------------------------------------------------------------------
+    # Fixture B:
+    # prompt=1000, cached=400, candidates=300, thoughts=120, tool_use=80, total=1500
+    # Expected Cost: $0.0008100 USD
+    # -------------------------------------------------------------------------
+    tracker_b = CostTracker(
+        budget_cap_usd=0.10,
+        usd_per_million_input=0.25,
+        usd_per_million_output=1.50,
+        usd_per_million_cached=0.025,
+    )
+
+    fixture_b = {
+        "prompt_token_count": 1000,
+        "cached_content_token_count": 400,
+        "candidates_token_count": 300,
+        "thoughts_token_count": 120,
+        "tool_use_prompt_token_count": 80,
+        "total_token_count": 1500,
+    }
+
+    turn_b = tracker_b.record_usage(1, fixture_b)
+
+    # Verification of Fixture B token reconciliation:
+    # Non-cached prompt: (1000 - 400) + 80 = 680
+    # Cached prompt: 400
+    # Total input: 680 + 400 = 1080
+    # Candidates output (including thoughts): 300 + 120 = 420
+    # Total tokens: 1080 + 420 = 1500
+    assert turn_b.total_tokens == 1500
+    assert turn_b.prompt_tokens == 680
+    assert turn_b.cached_tokens == 400
+    assert turn_b.candidates_tokens == 420
+    assert turn_b.thinking_tokens == 120
+    assert turn_b.tool_use_tokens == 80
+    assert turn_b.metadata_status == "CONSISTENT_VERIFIED"
+
+    # Exact cost calculation for Fixture B:
+    # non_cached_prompt_cost: 680 * 0.25 / 1e6   = $0.0001700
+    # cached_prompt_cost:     400 * 0.025 / 1e6  = $0.0000100
+    # candidates_cost:        420 * 1.50 / 1e6   = $0.0006300
+    # Sum: $0.0001700 + $0.0000100 + $0.0006300  = $0.0008100 USD
+    expected_cost_b = 0.0008100
+    assert abs(turn_b.turn_cost_usd - expected_cost_b) < 1e-9
+    assert abs(tracker_b.cumulative_cost_usd - expected_cost_b) < 1e-9
+
+    # -------------------------------------------------------------------------
+    # Inconsistent Provider Metadata Flagging:
+    # Provider reports an arbitrary total that does not match component sums
+    # -------------------------------------------------------------------------
+    tracker_inconsistent = CostTracker(budget_cap_usd=0.10)
+    fixture_inconsistent = {
+        "prompt_token_count": 920,
+        "cached_content_token_count": 400,
+        "candidates_token_count": 180,
+        "thoughts_token_count": 120,
+        "tool_use_prompt_token_count": 80,
+        "total_token_count": 9999,  # Corrupted/inconsistent total
+    }
+    turn_inc = tracker_inconsistent.record_usage(1, fixture_inconsistent)
+    assert turn_inc.metadata_status == "INCONSISTENT_PROVIDER_METADATA"
+    assert tracker_inconsistent.metadata_status == "INCONSISTENT_PROVIDER_METADATA"
+    summary_inc = tracker_inconsistent.to_dict()
+    assert summary_inc["metadata_status"] == "INCONSISTENT_PROVIDER_METADATA"
+
+    # -------------------------------------------------------------------------
+    # Mathematical proof explaining the $0.0006375 difference:
     # A cost of $0.0006375 corresponds to 700 non-cached prompt tokens:
     # (700 * 0.25 / 1e6) + (500 * 0.025 / 1e6) + (300 * 1.50 / 1e6) = $0.0006375
-    # The difference +$0.0000275 is strictly due to higher prompt/cached assumptions (1200/500)
-    # or erroneously double-counting tool tokens that are already subsumed in prompt_token_count.
+    # The difference +$0.0000275 arose strictly from a different input/cached split (1200/500)
+    # or double-counting tool tokens that are already subsumed in prompt_token_count.
+    # -------------------------------------------------------------------------
     hypothetical_inflated_cost = (700 * 0.25 / 1e6) + (500 * 0.025 / 1e6) + (300 * 1.50 / 1e6)
     assert abs(hypothetical_inflated_cost - 0.0006375) < 1e-9
 
 
 def test_b9_hallucinated_final_answer_never_stored_as_verified_memory():
-    """Prove that a hallucinated Gemini final answer cannot be stored as verified financial memory,
+    """Prove that only deterministic tool-derived facts are stored as verified memory,
 
-    even when an underlying tool call executes successfully.
+    including explicit provenance and dataset fingerprint, and that hallucinated text is segregated.
     """
     from src.retailmind.agent.loop import extract_verified_financial_facts
 
@@ -584,9 +658,10 @@ def test_b9_hallucinated_final_answer_never_stored_as_verified_memory():
 
         user_id = "user_integrity_test"
         session_id = "sess_integrity_test"
-        dataset_fp = "sha256_verified_dataset_fp"
+        task_id = "task_integrity_01"
+        dataset_fp = "sha256_verified_dataset_fp_1234567890abcdef"
 
-        # Scenario: Tool summarize_sales executes successfully with real ground-truth numbers
+        # Scenario 1: Tool summarize_sales executes successfully with real ground-truth numbers
         real_tool_observation = {
             "status": "success",
             "total_orders": 3,
@@ -607,13 +682,15 @@ def test_b9_hallucinated_final_answer_never_stored_as_verified_memory():
 
         # Extract verified facts using the deterministic extractor
         deterministic_summary = extract_verified_financial_facts(tool_calls_history)
-        verified_summary_to_store = f"[DETERMINISTIC VERIFIED METRICS]: {deterministic_summary}"
+        tools_used = [tc.get("tool") for tc in tool_calls_history if tc.get("status") == "success"]
+        provenance_str = f"tools={tools_used}, task_id={task_id}, dataset_fingerprint={dataset_fp[:16]}"
+        verified_summary_to_store = f"[DETERMINISTIC VERIFIED METRICS (Provenance: {provenance_str})]: {deterministic_summary}"
 
         # Persist to SQLite memory
         mem_mgr.record_task_memory(
             user_id=user_id,
             session_id=session_id,
-            task_id="task_integrity_01",
+            task_id=task_id,
             query="What is total sales revenue and orders count?",
             dataset_fingerprint=dataset_fp,
             summary=verified_summary_to_store,
@@ -627,8 +704,10 @@ def test_b9_hallucinated_final_answer_never_stored_as_verified_memory():
         assert len(recalled) == 1
         stored_summary = recalled[0]["summary"]
 
-        # 2. Strict integrity assertions:
-        # Ground truth numbers MUST be present
+        # 2. Strict integrity and provenance assertions:
+        assert "Provenance: tools=['summarize_sales']" in stored_summary
+        assert f"task_id={task_id}" in stored_summary
+        assert f"dataset_fingerprint={dataset_fp[:16]}" in stored_summary
         assert "Revenue=$75.0" in stored_summary
         assert "Orders=3" in stored_summary
         assert "Units=6.0" in stored_summary
@@ -641,40 +720,62 @@ def test_b9_hallucinated_final_answer_never_stored_as_verified_memory():
         # 3. Verify format for prompt injection
         prompt_block = mem_mgr.format_memory_for_prompt(user_id=user_id, dataset_fingerprint=dataset_fp)
         assert "Revenue=$75.0" in prompt_block
+        assert "Provenance: tools=['summarize_sales']" in prompt_block
         assert "$9,999,999" not in prompt_block
+
+        # Scenario 2: Unverified model output without tools
+        mem_mgr.record_task_memory(
+            user_id=user_id,
+            session_id=session_id,
+            task_id="task_integrity_02",
+            query="Speculate on next year growth",
+            dataset_fingerprint=dataset_fp,
+            summary=f"[UNVERIFIED MODEL OUTPUT]: {hallucinated_final_answer}",
+            task_status="SUCCESS",
+            is_verified=False,
+            tool_calls=[],
+        )
+
+        # Unverified task MUST NOT be returned in prompt context
+        prompt_block_after = mem_mgr.format_memory_for_prompt(user_id=user_id, dataset_fingerprint=dataset_fp)
+        assert "Speculate on next year growth" not in prompt_block_after
+        assert "$9,999,999" not in prompt_block_after
 
         mem_mgr.close()
 
 
 def test_b10_mcp_trusted_identity_and_synthetic_data_enforcement():
-    """Prove that MCP rejects in-band identity spoofing, and enforces synthetic-data-only
+    """Verify MCP in-band spoofing rejection and enforcement of approved synthetic datasets
 
-    restrictions when real user authentication is unavailable.
+    in unauthenticated public demo mode, documenting process-level identity boundary limits.
     """
     from src.retailmind.mcp.server import _verify_session_ownership
-    from src.retailmind.data.loader import DatasetManager
+    from src.retailmind.data.loader import (
+        DatasetManager,
+        verify_approved_synthetic_dataset,
+        APPROVED_BUNDLED_SYNTHETIC_DIR,
+    )
 
     session_id = f"test_b10_{uuid.uuid4().hex[:8]}"
     trusted_user = "user_legitimate_owner"
 
-    # 1. Register legitimate synthetic dataset
-    df_synthetic = pd.DataFrame({
+    # Register session owned by trusted_user
+    df_init = pd.DataFrame({
         "date": ["2026-01-01"],
         "product": ["Widget"],
         "quantity": [5],
         "unit_price": [10.0],
     })
-    DatasetManager.register_dataset(session_id, df_synthetic, user_id=trusted_user)
+    DatasetManager.register_dataset(session_id, df_init, user_id=trusted_user)
 
-    # 2. Verify identity boundary:
-    # When host environment sets trusted identity
+    # 1. MCP Process Environment Identity Boundary:
     os.environ["RETAILMIND_CALLER_USER_ID"] = trusted_user
     try:
-        # Legitimate call matching trusted host environment passes
+        # Legitimate caller matching process environment succeeds
         is_valid, msg = _verify_session_ownership(session_id, caller_user_id=trusted_user)
         assert is_valid is True
 
-        # Malicious in-band spoofing attempt (attacker passes different caller_user_id)
+        # Malicious in-band caller attempting to spoof different identity is REJECTED
         is_spoofed_valid, spoofed_msg = _verify_session_ownership(
             session_id, caller_user_id="attacker_spoofed_user"
         )
@@ -684,20 +785,47 @@ def test_b10_mcp_trusted_identity_and_synthetic_data_enforcement():
     finally:
         os.environ.pop("RETAILMIND_CALLER_USER_ID", None)
 
-    # 3. Enforce synthetic-data-only restriction:
-    # Attempting to register dataset containing customer PII in unauthenticated mode must fail
-    df_pii = pd.DataFrame({
+    # 2. Enforce Approved Bundled Synthetic Dataset Restriction in Unauthenticated Demo Mode:
+    # Arbitrary custom dataset uploaded in unauthenticated mode must be REJECTED
+    df_arbitrary = pd.DataFrame({
         "date": ["2026-01-01"],
-        "product": ["Widget"],
-        "quantity": [5],
-        "unit_price": [10.0],
-        "customer_email": ["victim@example.com"],
-        "credit_card": ["4111-2222-3333-4444"],
+        "product": ["Arbitrary Confidential Item"],
+        "quantity": [10],
+        "unit_price": [50.0],
     })
 
-    with pytest.raises(ValueError) as exc_info:
-        DatasetManager.register_dataset(f"sess_pii_{uuid.uuid4().hex[:8]}", df_pii, user_id="anon_user")
+    # When evaluated under strict unauthenticated demo mode (force_test_mode=False)
+    is_compliant, reason = verify_approved_synthetic_dataset(
+        "custom_customer_data.csv",
+        df_arbitrary,
+        force_test_mode=False,
+    )
+    assert is_compliant is False
+    assert "UNAUTHENTICATED_DEMO_RESTRICTION" in reason
+    assert "Arbitrary custom CSV uploads are disabled in unauthenticated public demo mode" in reason
 
-    assert "SYNTHETIC_DATA_POLICY_VIOLATION" in str(exc_info.value)
-    assert "PII/confidential columns detected" in str(exc_info.value)
+    # 3. Approved bundled synthetic dataset is ACCEPTED in unauthenticated mode
+    bundled_file = APPROVED_BUNDLED_SYNTHETIC_DIR / "synthetic_sales.csv"
+    if bundled_file.exists():
+        bundled_df = pd.read_csv(bundled_file, encoding="utf-8")
+        is_bundled_compliant, bundled_reason = verify_approved_synthetic_dataset(
+            bundled_file,
+            bundled_df,
+            force_test_mode=False,
+        )
+        assert is_bundled_compliant is True
+        assert bundled_reason == ""
+
+    # 4. Authenticated session permits custom CSV upload
+    os.environ["RETAILMIND_AUTH_MODE"] = "production"
+    try:
+        is_auth_compliant, auth_reason = verify_approved_synthetic_dataset(
+            "custom_customer_data.csv",
+            df_arbitrary,
+            force_test_mode=False,
+        )
+        assert is_auth_compliant is True
+        assert auth_reason == ""
+    finally:
+        os.environ.pop("RETAILMIND_AUTH_MODE", None)
 
