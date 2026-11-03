@@ -3,7 +3,8 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Phase%202.1%20Verified-success.svg)](docs/STATUS.md)
+[![Status](https://img.shields.io/badge/Phase-Phase%203%20Verified-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-53%20passed%20(100%25)-success.svg)](docs/PHASE_03_TEST_RESULTS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
 
@@ -108,10 +109,13 @@ Copy-Item .env.example .env
 # Note: .env is git-ignored and will NEVER be committed.
 ```
 
-### 4. Run Smoke Verification
+### 4. Run Automated Test Suite
 ```powershell
-# Run the Phase 0 smoke test
-pytest -v tests/test_smoke.py
+# Run the complete test suite (53 tests passing)
+pytest -v tests/
+
+# Run the live Gemini + MCP multi-tool demonstration
+python scripts/run_mcp_live_scenarios.py
 ```
 
 ---
@@ -131,6 +135,7 @@ pytest -v tests/test_smoke.py
 - [x] **Phase 1 — Planning & Spec**: One-page `agent_spec.md`, 8 tool contracts, CSV data contract, test plan, and architecture design passing (6/6).
 - [x] **Phase 2 — Agent Loop & Tool Calling**: Gemini iterative tool loop, 5 test inputs, JSONL traces, deterministic tools passing (16/16).
 - [x] **Phase 2.1 — Final Quality & Cost Verification**: Corrected standard pricing ($0.25/$1.50), missing-cost test, termination tests, regression tests (35/35 passing).
-- [ ] **Phase 3 — MCP & Persistent Memory**: MCP server/client routing, SQLite restart persistence.
+- [x] **Phase 2.2 — Final Cost Accounting Audit**: 100% reconciled arithmetic, verified cached rates, cost tests (42/42 passing).
+- [x] **Phase 3 — MCP & Persistent Memory**: Real MCP SDK v2 (`mcp==2.3.0`) stdio server & client, 8 tools routed dynamically, persistent SQLite memory surviving complete process restart, live Gemini+MCP traces (53/53 tests passing).
 - [ ] **Phase 4 — Safety, Approvals & Cost Metering**: Hostile injection tests, write approval gating, USD cost tracking.
 - [ ] **Phase 5 — Streamlit UI & Public Deployment**: Interactive UI, cloud deployment, final submission validation.

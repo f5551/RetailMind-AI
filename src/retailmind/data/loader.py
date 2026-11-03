@@ -1,6 +1,8 @@
 """RetailMind AI — CSV Ingestion, Parsing, and Validation Engine."""
 
 import re
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +38,7 @@ class ProcessedDataset:
     has_cost_data: bool = False
     duplicate_rows_count: int = 0
     date_range: Tuple[Optional[str], Optional[str]] = (None, None)
+    fingerprint: str = ""
 
 
 def sanitize_cell_value(val: Any) -> Any:
@@ -57,9 +60,35 @@ def sanitize_cell_value(val: Any) -> Any:
 
 
 class DatasetManager:
-    """Manages active session datasets in memory."""
+    """Manages active session datasets in memory with cross-process registry support."""
 
     _sessions: Dict[str, ProcessedDataset] = {}
+    REGISTRY_FILE = Path(__file__).resolve().parent.parent.parent.parent / "data" / "session_registry.json"
+
+    @classmethod
+    def _save_registry_entry(cls, session_id: str, file_path: str, fingerprint: str) -> None:
+        try:
+            cls.REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            registry = {}
+            if cls.REGISTRY_FILE.exists():
+                try:
+                    registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    registry = {}
+            registry[session_id] = {"path": file_path, "fingerprint": fingerprint}
+            cls.REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    @classmethod
+    def _load_registry_entry(cls, session_id: str) -> Optional[Dict[str, str]]:
+        if cls.REGISTRY_FILE.exists():
+            try:
+                registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                return registry.get(session_id)
+            except Exception:
+                return None
+        return None
 
     @classmethod
     def register_dataset(cls, session_id: str, csv_path_or_df: Any) -> ProcessedDataset:
@@ -88,20 +117,42 @@ class DatasetManager:
             raise ValueError("Dataset exceeds 50,000 maximum allowed row count limit.")
 
         processed = cls._process_raw_dataframe(raw_df)
+        processed.fingerprint = hashlib.sha256(raw_df.to_csv(index=False).encode("utf-8")).hexdigest()
         cls._sessions[session_id] = processed
+
+        if isinstance(csv_path_or_df, (str, Path)):
+            cls._save_registry_entry(session_id, str(Path(csv_path_or_df).resolve()), processed.fingerprint)
+
         return processed
 
     @classmethod
     def get_dataset(cls, session_id: str) -> ProcessedDataset:
         """Retrieves processed dataset for a session, or raises KeyError."""
         if session_id not in cls._sessions:
+            entry = cls._load_registry_entry(session_id)
+            if entry and Path(entry.get("path", "")).exists():
+                return cls.register_dataset(session_id, entry["path"])
             raise KeyError(f"No dataset found for session '{session_id}'. Please upload or inspect dataset first.")
         return cls._sessions[session_id]
 
     @classmethod
+    def get_dataset_fingerprint(cls, session_id: str) -> str:
+        """Returns the SHA-256 fingerprint of the session's active dataset."""
+        dataset = cls.get_dataset(session_id)
+        return dataset.fingerprint
+
+    @classmethod
     def clear_session(cls, session_id: str) -> None:
-        """Removes a session dataset from memory."""
+        """Removes a session dataset from memory and registry."""
         cls._sessions.pop(session_id, None)
+        if cls.REGISTRY_FILE.exists():
+            try:
+                registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                if session_id in registry:
+                    del registry[session_id]
+                    cls.REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+            except Exception:
+                pass
 
     @classmethod
     def _process_raw_dataframe(cls, raw_df: pd.DataFrame) -> ProcessedDataset:

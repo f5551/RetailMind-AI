@@ -1,5 +1,17 @@
-"""RetailMind AI — Single-Agent Tool-Calling Reasoning Loop."""
+"""RetailMind AI — Single-Agent Tool-Calling Reasoning Loop.
 
+Integrates:
+1. Gemini Native Function Calling (`google-genai` SDK).
+2. Model Context Protocol (MCP) Client/Server as default execution transport.
+3. Persistent SQLite Memory with user and dataset fingerprint isolation.
+4. Tripartite termination guardrails (max_turns=8, budget_cap=$0.10, final_answer).
+5. Executable permission enforcement (ask_on_write).
+"""
+
+import asyncio
+import concurrent.futures
+import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +31,11 @@ from src.retailmind.agent.permissions import PermissionManager
 from src.retailmind.agent.tracer import ExecutionTracer
 from src.retailmind.config import settings
 from src.retailmind.data.loader import DatasetManager
+from src.retailmind.mcp.client import MCPConnectionError, RetailMindMCPClient
+from src.retailmind.memory.manager import SQLiteMemoryManager
 from src.retailmind.tools.registry import dispatch_tool_call, get_gemini_tool_declarations
+
+logger = logging.getLogger("retailmind.agent.loop")
 
 
 class CredentialsMissingError(Exception):
@@ -51,10 +67,12 @@ class AgentResult:
     trace_path: Optional[str] = None
     cost_summary: Dict[str, Any] = field(default_factory=dict)
     tool_calls_history: List[Dict[str, Any]] = field(default_factory=list)
+    execution_transport: str = "mcp"
+    recalled_memory_count: int = 0
 
 
 class RetailMindAgent:
-    """The authoritative single-agent reasoning loop powered by Google Gemini API."""
+    """The authoritative single-agent reasoning loop powered by Google Gemini API and MCP."""
 
     def __init__(
         self,
@@ -63,12 +81,16 @@ class RetailMindAgent:
         max_turns: Optional[int] = None,
         budget_cap_usd: Optional[float] = None,
         permission_policy: Optional[str] = None,
+        execution_transport: str = "mcp",
+        memory_manager: Optional[SQLiteMemoryManager] = None,
     ):
         self.api_key = api_key if api_key is not None else settings.gemini_api_key
         self.model_id = model_id or settings.gemini_model
         self.max_turns = max_turns if max_turns is not None else settings.max_turns
         self.budget_cap_usd = budget_cap_usd if budget_cap_usd is not None else settings.budget_per_task_usd
         self.permission_manager = PermissionManager(policy=permission_policy or settings.permission_policy)
+        self.execution_transport = execution_transport.lower()  # "mcp" (default) or "direct"
+        self.memory_manager = memory_manager or SQLiteMemoryManager()
 
         # Initialize Google GenAI client if credentials exist
         self._client: Optional[genai.Client] = None
@@ -87,35 +109,97 @@ class RetailMindAgent:
         self,
         user_query: str,
         session_id: str,
+        user_id: str = "default_user",
         csv_path: Optional[Any] = None,
         approval_callback: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         save_trace_path: Optional[Path] = None,
+        enable_memory: bool = True,
     ) -> AgentResult:
-        """Executes a single-agent reasoning loop on a user task."""
+        """Executes a single-agent reasoning loop on a user task synchronously.
+        
+        Handles event loop dispatch safely across both standalone scripts and active async environments.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(
+                    lambda: asyncio.run(
+                        self._run_task_async(
+                            user_query=user_query,
+                            session_id=session_id,
+                            user_id=user_id,
+                            csv_path=csv_path,
+                            approval_callback=approval_callback,
+                            save_trace_path=save_trace_path,
+                            enable_memory=enable_memory,
+                        )
+                    )
+                ).result()
+        else:
+            return asyncio.run(
+                self._run_task_async(
+                    user_query=user_query,
+                    session_id=session_id,
+                    user_id=user_id,
+                    csv_path=csv_path,
+                    approval_callback=approval_callback,
+                    save_trace_path=save_trace_path,
+                    enable_memory=enable_memory,
+                )
+            )
+
+    async def _run_task_async(
+        self,
+        user_query: str,
+        session_id: str,
+        user_id: str = "default_user",
+        csv_path: Optional[Any] = None,
+        approval_callback: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
+        save_trace_path: Optional[Path] = None,
+        enable_memory: bool = True,
+    ) -> AgentResult:
+        """Core asynchronous agent execution loop."""
         task_id = str(uuid.uuid4())[:8]
 
-        # Ingest CSV if path provided
+        # 1. Register CSV if provided
+        dataset_fingerprint = ""
         if csv_path:
-            DatasetManager.register_dataset(session_id, csv_path)
+            processed = DatasetManager.register_dataset(session_id, csv_path)
+            dataset_fingerprint = processed.fingerprint
+        else:
+            try:
+                dataset_fingerprint = DatasetManager.get_dataset_fingerprint(session_id)
+            except Exception:
+                dataset_fingerprint = ""
+
+        # 2. Memory Recall: Retrieve previous verified context for (user_id, dataset_fingerprint)
+        memory_prompt_context = ""
+        recalled_count = 0
+        if enable_memory and dataset_fingerprint:
+            records = self.memory_manager.retrieve_relevant_context(user_id, dataset_fingerprint, limit=3)
+            recalled_count = len(records)
+            if records:
+                memory_prompt_context = self.memory_manager.format_memory_for_prompt(user_id, dataset_fingerprint, limit=3)
 
         cost_tracker = CostTracker(budget_cap_usd=self.budget_cap_usd)
         tracer = ExecutionTracer(task_id=task_id, session_id=session_id)
 
-        tracer.log_event("task_start", turn_index=0, data={"query": user_query, "model": self.model_id})
-
-        # Build Gemini function declarations
-        gemini_tools = [types.FunctionDeclaration(**d) for d in get_gemini_tool_declarations()]
-        tool_config = types.Tool(function_declarations=gemini_tools)
-
-        gen_config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            tools=[tool_config],
-            temperature=0.1,
+        tracer.log_event(
+            "task_start",
+            turn_index=0,
+            data={
+                "query": user_query,
+                "model": self.model_id,
+                "user_id": user_id,
+                "execution_transport": self.execution_transport,
+                "dataset_fingerprint": dataset_fingerprint[:12] if dataset_fingerprint else None,
+                "recalled_memory_count": recalled_count,
+            },
         )
-
-        contents: List[types.Content] = [
-            types.Content(role="user", parts=[types.Part.from_text(text=f"[Session ID: {session_id}]\n{user_query}")])
-        ]
 
         turns_executed = 0
         tool_calls_count = 0
@@ -123,14 +207,59 @@ class RetailMindAgent:
         final_answer = ""
         stop_reason = "MAX_TURNS_REACHED"
 
+        # 3. Setup MCP Client if execution_transport == "mcp"
+        mcp_client: Optional[RetailMindMCPClient] = None
+        if self.execution_transport == "mcp":
+            mcp_client = RetailMindMCPClient()
+            try:
+                await mcp_client.connect()
+                gemini_declarations = mcp_client.get_gemini_tool_declarations()
+            except Exception as mcp_err:
+                stop_reason = "MCP_CONNECTION_ERROR"
+                final_answer = f"MCP server initialization failed: {mcp_err}"
+                tracer.log_event("error", turn_index=0, data={"error": final_answer})
+                if save_trace_path:
+                    tracer.save_jsonl(save_trace_path)
+                return AgentResult(
+                    task_id=task_id,
+                    session_id=session_id,
+                    final_answer=final_answer,
+                    stop_reason=stop_reason,
+                    turns_executed=0,
+                    total_cost_usd=0.0,
+                    total_tokens=0,
+                    tool_calls_count=0,
+                    execution_transport="mcp",
+                )
+        else:
+            # Direct dispatch (for isolated unit testing)
+            gemini_declarations = [types.FunctionDeclaration(**d) for d in get_gemini_tool_declarations()]
+
         try:
+            tool_config = types.Tool(function_declarations=gemini_declarations)
+            gen_config = types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=[tool_config],
+                temperature=0.1,
+            )
+
+            # Construct initial prompt with optional recalled memory
+            initial_user_text = f"[Session ID: {session_id}]\n[User ID: {user_id}]\n"
+            if memory_prompt_context:
+                initial_user_text += f"{memory_prompt_context}\n"
+            initial_user_text += user_query
+
+            contents: List[types.Content] = [
+                types.Content(role="user", parts=[types.Part.from_text(text=initial_user_text)])
+            ]
+
             for turn in range(1, self.max_turns + 1):
                 turns_executed = turn
 
-                # 1. Pre-flight budget check
+                # Pre-flight budget check
                 cost_tracker.pre_flight_check()
 
-                # 2. Call Gemini model with automatic rate-limit backoff
+                # Call Gemini model with automatic rate-limit backoff
                 response = None
                 for attempt in range(4):
                     try:
@@ -143,15 +272,11 @@ class RetailMindAgent:
                     except Exception as api_err:
                         err_str = str(api_err)
                         if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                            # Free tier rate limit (5 RPM): pause and retry
-                            import time
-                            time.sleep(20)
+                            await asyncio.sleep(20)
                             if attempt == 3:
                                 raise
                         elif "503" in err_str or "UNAVAILABLE" in err_str:
-                            # Transient service availability spike: pause and retry
-                            import time
-                            time.sleep(10)
+                            await asyncio.sleep(10)
                             if attempt == 3:
                                 raise
                         else:
@@ -160,10 +285,9 @@ class RetailMindAgent:
                 if response is None:
                     raise RuntimeError("Failed to obtain response from Gemini API after retries.")
 
-                # 3. Post-flight usage recording & budget update
+                # Post-flight usage recording & budget check
                 turn_cost = cost_tracker.record_usage(turn, response.usage_metadata)
 
-                # Check if candidate content is present
                 if not response.candidates or not response.candidates[0].content:
                     final_answer = "Model returned empty candidate response."
                     stop_reason = "EMPTY_MODEL_OUTPUT"
@@ -172,7 +296,7 @@ class RetailMindAgent:
                 model_content = response.candidates[0].content
                 contents.append(model_content)
 
-                # 4. Check for function calls
+                # Check for function calls
                 function_calls = response.function_calls
 
                 if function_calls:
@@ -183,7 +307,10 @@ class RetailMindAgent:
                             "action": "function_calls",
                             "calls": [{"name": fc.name, "args": fc.args} for fc in function_calls],
                         },
-                        cost_info={"turn_cost_usd": turn_cost.turn_cost_usd, "cumulative_cost_usd": turn_cost.cumulative_cost_usd},
+                        cost_info={
+                            "turn_cost_usd": turn_cost.turn_cost_usd,
+                            "cumulative_cost_usd": turn_cost.cumulative_cost_usd,
+                        },
                     )
 
                     function_response_parts: List[types.Part] = []
@@ -193,46 +320,66 @@ class RetailMindAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
 
-                        # Ensure session_id is injected if omitted by model
                         if "session_id" not in tool_args:
                             tool_args["session_id"] = session_id
 
                         # Enforce executable permission layer
-                        is_approved = self.permission_manager.check_permission(tool_name, tool_args, approval_callback)
+                        is_approved = self.permission_manager.check_permission(
+                            tool_name=tool_name,
+                            arguments=tool_args,
+                            approval_callback=approval_callback,
+                        )
 
-                        # Deterministic tool execution
-                        observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved)
+                        # Execute tool via MCP client (default) or direct dispatch
+                        if self.execution_transport == "mcp" and mcp_client:
+                            if tool_name == "generate_report" and not is_approved:
+                                observation = {
+                                    "status": "approval_required",
+                                    "error_code": "PERMISSION_DENIED_PENDING_APPROVAL",
+                                    "message": "Action 'generate_report' is a write operation and requires explicit human user authorization.",
+                                    "approval_status": "DENIED_OR_PENDING",
+                                }
+                            else:
+                                observation = await mcp_client.call_tool(tool_name, tool_args)
+                        else:
+                            observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved)
 
-                        call_record = {
+                        call_summary = {
                             "turn": turn,
                             "tool": tool_name,
                             "args": tool_args,
                             "is_approved": is_approved,
-                            "status": observation.get("status", "unknown"),
+                            "transport": self.execution_transport,
+                            "status": observation.get("status", "unknown") if isinstance(observation, dict) else "success",
                         }
-                        tool_calls_history.append(call_record)
+                        tool_calls_history.append(call_summary)
 
                         tracer.log_event(
                             "tool_execution",
                             turn_index=turn,
-                            data={"call": call_record, "observation": observation},
+                            data={
+                                "call": call_summary,
+                                "observation": observation,
+                                "transport": self.execution_transport,
+                            },
                         )
 
                         part = types.Part.from_function_response(name=tool_name, response=observation)
                         function_response_parts.append(part)
 
-                    # Feed observations back to Gemini as user role
                     contents.append(types.Content(role="user", parts=function_response_parts))
 
                 else:
-                    # Model provided text final answer without requesting tools
                     final_answer = response.text or ""
                     stop_reason = "FINAL_ANSWER"
                     tracer.log_event(
                         "model_turn",
                         turn_index=turn,
                         data={"action": "final_answer", "text": final_answer},
-                        cost_info={"turn_cost_usd": turn_cost.turn_cost_usd, "cumulative_cost_usd": turn_cost.cumulative_cost_usd},
+                        cost_info={
+                            "turn_cost_usd": turn_cost.turn_cost_usd,
+                            "cumulative_cost_usd": turn_cost.cumulative_cost_usd,
+                        },
                     )
                     break
 
@@ -244,6 +391,10 @@ class RetailMindAgent:
             stop_reason = "ERROR"
             final_answer = f"Task terminated due to unhandled exception: {str(exc)}"
             tracer.log_event("error", turn_index=turns_executed, data={"error": str(exc)})
+        finally:
+            # Cleanly close MCP client subprocess if active
+            if mcp_client:
+                await mcp_client.close()
 
         tracer.log_event(
             "task_complete",
@@ -253,9 +404,25 @@ class RetailMindAgent:
                 "turns_executed": turns_executed,
                 "tool_calls_count": tool_calls_count,
                 "final_answer": final_answer,
+                "execution_transport": self.execution_transport,
             },
             cost_info=cost_tracker.to_dict(),
         )
+
+        # 4. Memory Persistence: Record verified result or failure outcome
+        if enable_memory and dataset_fingerprint:
+            is_success = (stop_reason == "FINAL_ANSWER")
+            self.memory_manager.record_task_memory(
+                user_id=user_id,
+                session_id=session_id,
+                task_id=task_id,
+                query=user_query,
+                dataset_fingerprint=dataset_fingerprint,
+                summary=final_answer,
+                task_status="SUCCESS" if is_success else stop_reason,
+                is_verified=is_success,
+                tool_calls=tool_calls_history,
+            )
 
         trace_file_saved = None
         if save_trace_path:
@@ -274,4 +441,6 @@ class RetailMindAgent:
             trace_path=trace_file_saved,
             cost_summary=cost_tracker.to_dict(),
             tool_calls_history=tool_calls_history,
+            execution_transport=self.execution_transport,
+            recalled_memory_count=recalled_count,
         )
