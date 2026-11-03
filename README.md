@@ -3,8 +3,8 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Bilingual%20UI%20Verified-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-74%20passed%20(100%25)-success.svg)](docs/PHASE_05_TEST_RESULTS.md)
+[![Status](https://img.shields.io/badge/Status-Ready%20With%20Minor%20Issues-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-98%20passed%20(100%25)-success.svg)](docs/STATUS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 
@@ -45,31 +45,63 @@ RetailMind-AI/
 ├── .gitignore                   # Excludes .env, SQLite DBs, real CSV uploads, reports
 ├── AGENTS.md                    # Permanent Antigravity agent instructions & constraints
 ├── README.md                    # Project documentation, quickstart, and SDK references
+├── agent_spec.md                # Day 1 one-page formal specification
+├── cost_analysis.md             # Provider token pricing and monthly cost models
 ├── pyproject.toml               # Modern Python package specification
 ├── requirements.txt             # Locked dependencies for reproducible builds
-├── data/                        # Persistent SQLite database storage (git-ignored)
-├── docs/                        # Governance and audit documentation
+├── Dockerfile                   # Multi-stage production container definition
+├── Procfile                     # Process file for web server execution
+├── railway.json                 # Railway cloud deployment configuration
+├── app.py                       # Bilingual Streamlit SaaS dashboard
+├── data/                        # Persistent storage (retailmind.db, audit.db, auth.db)
+│   └── snapshots/               # Cross-process dataset sync snapshots
+├── docs/                        # Complete governance, architecture, and audit documentation
 │   ├── CAPSTONE_REQUIREMENTS.md # Original immutable capstone contract
+│   ├── CAPSTONE_COMPLETION_REPORT.md # Comprehensive final audit report
+│   ├── REMAINING_WORK_CHECKLIST.md   # Actionable pre-submission priority checklist
 │   ├── IMPLEMENTATION_PLAN.md   # Phased execution plan & acceptance gates
 │   ├── EVIDENCE_MATRIX.md       # Traceability matrix for all requirements
-│   └── STATUS.md                # Real-time verified progress & journal
-├── prompts/                     # Step-by-step phase prompts
-│   ├── PHASE_00_START.md        # Phase 0 instructions (Project Control)
-│   └── PHASE_01_PLANNING.md     # Phase 1 instructions (Planning & Spec)
+│   ├── STATUS.md                # Real-time verified progress & journal
+│   ├── ARCHITECTURE_DESIGN.md   # System design and boundaries
+│   ├── SECURITY_THREAT_MODEL.md # Security analysis and trust zones
+│   ├── TOOL_CONTRACTS.md        # API contracts for all 8 MCP tools
+│   ├── PROMPT_INJECTION_TESTS.md # Adversarial attack defense reports
+│   └── DEPLOYMENT_GUIDE.md      # Railway and Render cloud deployment instructions
 ├── reports/                     # Output directory for user-approved reports
 ├── sample_data/                 # Synthetic, non-confidential sample datasets
-│   └── synthetic_sales.csv      # Sample sales dataset conforming to schema
+│   ├── synthetic_sales.csv      # Standard 15-row retail benchmark
+│   └── adversarial_prompt_injection.csv # Security benchmark fixture
 ├── src/
 │   └── retailmind/              # Core application package
-│       └── __init__.py          # Package initialization
-├── tests/                       # Automated test suite
-│   ├── __init__.py
-│   └── test_smoke.py            # Phase 0 environment smoke check
-└── traces/                      # Authentic JSONL execution logs (submission artifacts)
-    ├── README.md                # Trace requirements documentation
-    ├── success_1.jsonl          # (To be generated in Phase 2)
-    ├── near_failure_recovery.jsonl # (To be generated in Phase 2)
-    └── explicit_failure.jsonl   # (To be generated in Phase 4)
+│       ├── config.py            # Global runtime configuration and budget settings
+│       ├── agent/               # Agent loop, cost meter, authorization, tracer
+│       │   ├── loop.py          # Gemini single-agent reasoning loop
+│       │   ├── cost_meter.py    # Usage metadata meter & budget enforcement
+│       │   ├── auth_service.py  # Cryptographic capability tickets (WAL SQLite)
+│       │   ├── permissions.py   # Executable ask_on_write policy manager
+│       │   └── tracer.py        # JSONL execution tracer
+│       ├── audit/               # Persistent SQLite audit subsystem
+│       │   ├── logger.py        # Append-only audit logger with secret redaction
+│       │   └── schema.py        # Versioned SQLite audit schema
+│       ├── data/                # Ingestion, validation, formula sanitization
+│       │   └── loader.py        # DatasetManager, schema validation, snapshots
+│       ├── mcp/                 # Model Context Protocol subsystem
+│       │   ├── client.py        # Client adapter with dynamic tool discovery
+│       │   └── server.py        # MCPServer exposing 8 tools over stdio
+│       ├── memory/              # SQLite persistent memory subsystem
+│       │   ├── manager.py       # Isolated, fingerprint-scoped episodic memory
+│       │   └── schema.py        # Versioned analytical memory schema
+│       ├── tools/               # 8 deterministic Python analytics tools
+│       │   ├── schemas.py       # Pydantic input/output schemas
+│       │   ├── implementations.py # Pure-Python arithmetic engines
+│       │   └── registry.py      # Tool dispatch registry
+│       └── ui/                  # Internationalization and presentation
+│           └── i18n.py          # Centralized English/Arabic translations & RTL
+├── tests/                       # Automated test suite (98 tests across 13 modules)
+└── traces/                      # Authentic JSONL execution logs (16 real runs)
+    ├── success_1.jsonl          # Submission Item C: Successful analytical run
+    ├── near_failure_recovery.jsonl # Submission Item C: Near-failure recovery
+    └── explicit_failure.jsonl   # Submission Item C: Human denial execution
 ```
 
 ---
@@ -111,7 +143,7 @@ Copy-Item .env.example .env
 
 ### 4. Run Automated Test Suite
 ```powershell
-# Run the complete test suite across all 9 modules (74 tests passing)
+# Run the complete test suite across all 13 modules (98 tests passing)
 pytest -v tests/
 
 # Run the live Gemini + MCP multi-tool demonstration
@@ -161,3 +193,7 @@ RetailMind AI is fully configured for deployment on [Railway](https://railway.ap
 - [x] **Phase 4 — Safety, Approvals & Cost Metering**: 3 hostile injection tests defended, capability-based write approval tickets, append-only SQLite audit log, official submission traces (60/60 tests passing).
 - [x] **Phase 5 — Streamlit UI & Cloud Deployment**: Full 5-view SaaS interface (`app.py`), live chat with Gemini+MCP, human write approval banner, Railway deployment configs, automated UI tests (67/67 tests passing).
 - [x] **Phase 5.1 — Full Bilingual (Arabic/English) Toggle**: Centralized `i18n.py` dictionary, scoped RTL layout with Cairo typography, trusted language directives for Gemini, session state preservation (74/74 tests passing).
+- [x] **Remediation Phase A — Critical Access Control & Validation**: Session snapshot sync across MCP subprocesses, tenant isolation, session ownership check on all 8 tools, non-finite numeric quarantine (80/80 tests passing).
+- [x] **Remediation Phase B — Financial Correctness & Cost Accounting**: Distinct order counting, correct zero-base growth conventions, dynamic IQR multiplier, formula-sanitized CSV export, deterministic memory verification, exact token reconciliation (91/91 tests passing).
+- [x] **Remediation Phase C — Final Quality & Acceptance**: Synthetic-only demo policy, genuine chronological near-failure recovery trace, missing i18n keys eliminated, storage path traversal defense, pre/post budget enforcement (98/98 tests passing).
+- [x] **Capstone Comprehensive Audit**: Day 1–5 requirements verification, 5 submission artifacts validation, audit reports generated (`docs/CAPSTONE_COMPLETION_REPORT.md`, `docs/REMAINING_WORK_CHECKLIST.md`). Status: Ready With Minor Issues.
