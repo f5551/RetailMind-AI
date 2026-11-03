@@ -129,7 +129,7 @@ class DetectAnomaliesInput(BaseModel):
     session_id: str = Field(..., description="Active session identifier.")
     column: Literal["revenue", "quantity", "unit_price"] = Field("revenue", description="Column to inspect.")
     method: Literal["zscore", "iqr"] = Field("zscore", description="Anomaly detection algorithm.")
-    threshold: float = Field(2.5, ge=1.0, le=5.0, description="Outlier sensitivity threshold.")
+    threshold: float = Field(2.5, ge=0.1, le=10.0, description="Outlier sensitivity threshold.")
 
 
 class AnomalyItem(BaseModel):

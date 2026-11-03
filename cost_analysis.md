@@ -17,7 +17,8 @@ RetailMind AI operates a single-agent reasoning loop powered by Google's `gemini
   - **Standard Output (Candidates, incl. Thinking)**: **$1.50** per 1,000,000 tokens ($0.00000150 per token)
   - **Context-Cached Input**: **$0.025** per 1,000,000 tokens ($0.000000025 per token)
 - **Per-Task Hard Budget Cap**: **$0.10 USD** (enforced in application code before and after each model call)
-- **Actual Billed Provider Cost**: **$0.00 USD** (active Google AI Studio development free tier)
+- **Token Usage Reconciliation (Phase B)**: Full metadata reconciliation supporting prompt tokens, context-cached tokens, candidate tokens, thinking tokens (`thoughts_token_count`), and tool prompt tokens (`tool_use_prompt_token_count`), strictly reconciling with provider's `total_token_count` to eliminate under-counting or double-counting.
+- **Actual Billed Provider Cost**: **$0.00 USD** (active Google AI Studio development free tier; reported status: `UNKNOWN_NO_BILLING_EVIDENCE` for billing invoices)
 
 ---
 

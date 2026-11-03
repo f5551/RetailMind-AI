@@ -11,7 +11,9 @@ import numpy as np
 import pandas as pd
 
 from src.retailmind.config import settings
-from src.retailmind.data.loader import DatasetManager, ProcessedDataset
+import csv
+import logging
+from src.retailmind.data.loader import DatasetManager, ProcessedDataset, sanitize_cell_value
 from src.retailmind.tools.schemas import (
     AnomalyItem,
     ComparePeriodsInput,
@@ -35,6 +37,22 @@ from src.retailmind.tools.schemas import (
     ValidateDatasetOutput,
     ValidationIssueItem,
 )
+
+
+logger = logging.getLogger("retailmind.tools.implementations")
+
+
+def count_distinct_orders(df: pd.DataFrame) -> int:
+    """Computes distinct order count: distinct non-empty order_ids, plus rows lacking an order_id."""
+    if len(df) == 0:
+        return 0
+    if "order_id" in df.columns:
+        valid_orders = df["order_id"].dropna()
+        valid_orders = valid_orders[valid_orders.astype(str).str.strip().ne("")]
+        distinct_named = int(valid_orders.nunique())
+        missing_count = len(df) - len(valid_orders)
+        return distinct_named + missing_count
+    return len(df)
 
 
 def inspect_dataset(args: InspectDatasetInput) -> Dict[str, Any]:
@@ -94,15 +112,15 @@ def summarize_sales(args: SummarizeSalesInput) -> Dict[str, Any]:
     if args.end_date:
         df = df[df["date"] <= args.end_date]
 
-    total_orders = len(df)
-    net_units = float(df["quantity"].sum()) if total_orders > 0 else 0.0
-    net_revenue = float(df["line_revenue"].sum()) if total_orders > 0 else 0.0
+    total_orders = count_distinct_orders(df)
+    net_units = float(df["quantity"].sum()) if len(df) > 0 else 0.0
+    net_revenue = float(df["line_revenue"].sum()) if len(df) > 0 else 0.0
 
     if not math.isfinite(net_units) or not math.isfinite(net_revenue):
         raise ValueError("Non-finite numerical result detected in sales summary.")
 
     # Profit and margin policy: only if cost is present for all valid rows
-    if dataset.has_cost_data and total_orders > 0:
+    if dataset.has_cost_data and len(df) > 0:
         net_profit = float(df["line_profit"].sum())
         if not math.isfinite(net_profit):
             raise ValueError("Non-finite profit detected in sales summary.")
@@ -221,17 +239,45 @@ def compare_periods(args: ComparePeriodsInput) -> Dict[str, Any]:
     df_a = df[(df["date"] >= args.period_a.start_date) & (df["date"] <= args.period_a.end_date)]
     rev_a = float(df_a["line_revenue"].sum()) if len(df_a) > 0 else 0.0
     units_a = float(df_a["quantity"].sum()) if len(df_a) > 0 else 0.0
+    orders_a = count_distinct_orders(df_a)
 
     # Period B
     df_b = df[(df["date"] >= args.period_b.start_date) & (df["date"] <= args.period_b.end_date)]
     rev_b = float(df_b["line_revenue"].sum()) if len(df_b) > 0 else 0.0
     units_b = float(df_b["quantity"].sum()) if len(df_b) > 0 else 0.0
+    orders_b = count_distinct_orders(df_b)
 
     rev_delta = rev_b - rev_a
-    rev_growth = ((rev_delta / rev_a) * 100.0) if rev_a != 0 else (100.0 if rev_b > 0 else 0.0)
+    # FIX B2: Mathematical convention for revenue growth from zero / negative base
+    if rev_a == 0.0:
+        if rev_b == 0.0:
+            rev_growth = 0.0
+            rev_growth_status = "UNCHANGED_ZERO_BASE"
+        else:
+            rev_growth = None
+            rev_growth_status = "UNDEFINED_PREVIOUS_PERIOD_ZERO"
+    elif rev_a < 0.0:
+        rev_growth = round((rev_delta / abs(rev_a)) * 100.0, 2)
+        rev_growth_status = "NEGATIVE_BASE_REVENUE"
+    else:
+        rev_growth = round((rev_delta / rev_a) * 100.0, 2)
+        rev_growth_status = "CALCULATED"
 
     units_delta = units_b - units_a
-    units_growth = ((units_delta / units_a) * 100.0) if units_a != 0 else (100.0 if units_b > 0 else 0.0)
+    # FIX B2: Mathematical convention for units growth from zero / negative base
+    if units_a == 0.0:
+        if units_b == 0.0:
+            units_growth = 0.0
+            units_growth_status = "UNCHANGED_ZERO_BASE"
+        else:
+            units_growth = None
+            units_growth_status = "UNDEFINED_PREVIOUS_PERIOD_ZERO"
+    elif units_a < 0.0:
+        units_growth = round((units_delta / abs(units_a)) * 100.0, 2)
+        units_growth_status = "NEGATIVE_BASE_UNITS"
+    else:
+        units_growth = round((units_delta / units_a) * 100.0, 2)
+        units_growth_status = "CALCULATED"
 
     output = ComparePeriodsOutput(
         status="success",
@@ -239,19 +285,21 @@ def compare_periods(args: ComparePeriodsInput) -> Dict[str, Any]:
             "label": f"{args.period_a.start_date} to {args.period_a.end_date}",
             "net_revenue": round(rev_a, 2),
             "net_units": round(units_a, 2),
-            "orders_count": len(df_a),
+            "orders_count": orders_a,
         },
         period_b={
             "label": f"{args.period_b.start_date} to {args.period_b.end_date}",
             "net_revenue": round(rev_b, 2),
             "net_units": round(units_b, 2),
-            "orders_count": len(df_b),
+            "orders_count": orders_b,
         },
         variance={
             "revenue_delta": round(rev_delta, 2),
-            "revenue_growth_percentage": round(rev_growth, 2),
+            "revenue_growth_percentage": rev_growth,
+            "revenue_growth_status": rev_growth_status,
             "units_delta": round(units_delta, 2),
-            "units_growth_percentage": round(units_growth, 2),
+            "units_growth_percentage": units_growth,
+            "units_growth_status": units_growth_status,
         },
     )
     return output.model_dump()
@@ -259,6 +307,13 @@ def compare_periods(args: ComparePeriodsInput) -> Dict[str, Any]:
 
 def detect_anomalies(args: DetectAnomaliesInput) -> Dict[str, Any]:
     """Identifies statistical sales anomalies using Z-score or IQR thresholds."""
+    if not math.isfinite(args.threshold) or args.threshold <= 0:
+        return {
+            "status": "error",
+            "error_code": "INVALID_THRESHOLD",
+            "message": f"Threshold must be a finite, positive number. Got: {args.threshold}",
+        }
+
     dataset = DatasetManager.get_dataset(args.session_id)
     df = dataset.valid_df.copy()
 
@@ -275,42 +330,62 @@ def detect_anomalies(args: DetectAnomaliesInput) -> Dict[str, Any]:
     anomalies: List[AnomalyItem] = []
 
     if args.method == "zscore":
-        mean = target_series.mean()
-        std = target_series.std(ddof=1)
-        if std > 0:
-            z_scores = (target_series - mean) / std
-            outliers = df[np.abs(z_scores) >= args.threshold]
-            for idx in outliers.index:
-                row = df.loc[idx]
-                score = float(z_scores.loc[idx])
-                anomalies.append(
-                    AnomalyItem(
-                        order_id=str(row.get("order_id", f"ROW-{idx}")),
-                        date=str(row["date"]),
-                        product=str(row["product"]),
-                        value=round(float(target_series.loc[idx]), 2),
-                        score=round(score, 2),
-                        description=f"Transaction value deviates {round(score, 2)} standard deviations from mean ({round(mean, 2)})",
-                    )
+        mean = float(target_series.mean())
+        std = float(target_series.std(ddof=1))
+        # Handle zero variance or constant-value column
+        if std == 0.0 or not math.isfinite(std):
+            return DetectAnomaliesOutput(
+                status="success",
+                method_used=args.method,
+                column_analyzed=args.column,
+                anomalies_count=0,
+                anomalies=[],
+            ).model_dump()
+
+        z_scores = (target_series - mean) / std
+        outliers = df[np.abs(z_scores) >= args.threshold]
+        for idx in outliers.index:
+            row = df.loc[idx]
+            score = float(z_scores.loc[idx])
+            anomalies.append(
+                AnomalyItem(
+                    order_id=str(row.get("order_id", f"ROW-{idx}")),
+                    date=str(row["date"]),
+                    product=str(row["product"]),
+                    value=round(float(target_series.loc[idx]), 2),
+                    score=round(score, 2),
+                    description=f"Transaction value deviates {round(score, 2)} standard deviations from mean ({round(mean, 2)})",
                 )
+            )
     elif args.method == "iqr":
-        q25 = target_series.quantile(0.25)
-        q75 = target_series.quantile(0.75)
-        iqr = q75 - q25
-        lower_bound = q25 - (1.5 * iqr)
-        upper_bound = q75 + (1.5 * iqr)
+        q25 = float(target_series.quantile(0.25))
+        q75 = float(target_series.quantile(0.75))
+        iqr = float(q75 - q25)
+        # Handle zero variance or constant-value column
+        if iqr == 0.0 or not math.isfinite(iqr):
+            return DetectAnomaliesOutput(
+                status="success",
+                method_used=args.method,
+                column_analyzed=args.column,
+                anomalies_count=0,
+                anomalies=[],
+            ).model_dump()
+
+        lower_bound = q25 - (args.threshold * iqr)
+        upper_bound = q75 + (args.threshold * iqr)
         outliers = df[(target_series < lower_bound) | (target_series > upper_bound)]
         for idx in outliers.index:
             row = df.loc[idx]
             val = float(target_series.loc[idx])
+            score_delta = val - (upper_bound if val > upper_bound else lower_bound)
             anomalies.append(
                 AnomalyItem(
                     order_id=str(row.get("order_id", f"ROW-{idx}")),
                     date=str(row["date"]),
                     product=str(row["product"]),
                     value=round(val, 2),
-                    score=round(val - (upper_bound if val > upper_bound else lower_bound), 2),
-                    description=f"Transaction value outside IQR bounds [{round(lower_bound, 2)}, {round(upper_bound, 2)}]",
+                    score=round(score_delta, 2),
+                    description=f"Transaction value outside IQR bounds [{round(lower_bound, 2)}, {round(upper_bound, 2)}] with threshold {args.threshold}",
                 )
             )
 
@@ -334,25 +409,24 @@ def segment_sales(args: SegmentSalesInput) -> Dict[str, Any]:
 
     total_revenue = float(df["line_revenue"].sum()) if len(df) > 0 else 0.0
 
-    grouped = df.groupby(args.dimension, as_index=False).agg(
-        net_orders=("quantity", "count"),
-        net_units=("quantity", "sum"),
-        net_revenue=("line_revenue", "sum"),
-    )
-
     segments: List[SegmentItem] = []
-    for _, row in grouped.iterrows():
-        rev = float(row["net_revenue"])
+    for dim_val, group_df in df.groupby(args.dimension):
+        rev = float(group_df["line_revenue"].sum())
+        units = float(group_df["quantity"].sum())
+        orders = count_distinct_orders(group_df)
         pct = (rev / total_revenue * 100.0) if total_revenue != 0 else 0.0
         segments.append(
             SegmentItem(
-                name=str(row[args.dimension]),
-                net_orders=int(row["net_orders"]),
-                net_units=round(float(row["net_units"]), 2),
+                name=str(dim_val),
+                net_orders=orders,
+                net_units=round(units, 2),
                 net_revenue=round(rev, 2),
                 revenue_percentage=round(pct, 2),
             )
         )
+
+    # Sort descending by net revenue
+    segments.sort(key=lambda s: s.net_revenue, reverse=True)
 
     output = SegmentSalesOutput(
         status="success",
@@ -378,40 +452,80 @@ def generate_report(args: GenerateReportInput, is_approved: bool = False) -> Dic
             },
         ).model_dump()
 
+    if args.format not in ("markdown", "csv"):
+        return {
+            "status": "error",
+            "error_code": "INVALID_REPORT_FORMAT",
+            "message": f"Unsupported report format '{args.format}'. Allowed formats are 'markdown' and 'csv'.",
+        }
+
     # Human authorization verified: execute report persistence
     settings.reports_dir.mkdir(parents=True, exist_ok=True)
     timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_title = "".join(c for c in args.title if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_").lower()
-    filename = f"{safe_title}_{timestamp_str}.md"
-    report_path = settings.reports_dir / filename
 
-    content_lines = [
-        f"# {args.title}",
-        f"*Generated on: {datetime.now(timezone.utc).isoformat()} (UTC)*",
-        f"*Session: {args.session_id}*",
-        "",
-    ]
+    if args.format == "csv":
+        filename = f"{safe_title}_{timestamp_str}.csv"
+        report_path = settings.reports_dir / filename
 
-    for section in args.sections:
-        content_lines.append(f"## {section.heading}")
-        content_lines.append(section.content)
-        content_lines.append("")
-        if section.table_data:
-            # Format markdown table
-            headers = list(section.table_data[0].keys())
-            content_lines.append("| " + " | ".join(headers) + " |")
-            content_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-            for r in section.table_data:
-                content_lines.append("| " + " | ".join(str(r.get(h, "")) for h in headers) + " |")
+        output_rows: List[List[str]] = [
+            ["Report Title", sanitize_cell_value(args.title)],
+            ["Generated At (UTC)", datetime.now(timezone.utc).isoformat()],
+            ["Session ID", sanitize_cell_value(args.session_id)],
+            [],
+        ]
+
+        for section in args.sections:
+            output_rows.append(["Section", sanitize_cell_value(section.heading)])
+            output_rows.append(["Summary", sanitize_cell_value(section.content)])
+            if section.table_data:
+                table_headers = list(section.table_data[0].keys())
+                sanitized_headers = [sanitize_cell_value(h) for h in table_headers]
+                output_rows.append(sanitized_headers)
+                for r in section.table_data:
+                    row_vals = [sanitize_cell_value(str(r.get(h, ""))) for h in table_headers]
+                    output_rows.append(row_vals)
+            output_rows.append([])
+
+        with open(report_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerows(output_rows)
+
+        file_bytes = report_path.stat().st_size
+
+    else:
+        # Markdown format
+        filename = f"{safe_title}_{timestamp_str}.md"
+        report_path = settings.reports_dir / filename
+
+        content_lines = [
+            f"# {args.title}",
+            f"*Generated on: {datetime.now(timezone.utc).isoformat()} (UTC)*",
+            f"*Session: {args.session_id}*",
+            "",
+        ]
+
+        for section in args.sections:
+            content_lines.append(f"## {section.heading}")
+            content_lines.append(section.content)
             content_lines.append("")
+            if section.table_data:
+                # Format markdown table
+                headers = list(section.table_data[0].keys())
+                content_lines.append("| " + " | ".join(headers) + " |")
+                content_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+                for r in section.table_data:
+                    content_lines.append("| " + " | ".join(str(r.get(h, "")) for h in headers) + " |")
+                content_lines.append("")
 
-    full_text = "\n".join(content_lines)
-    report_path.write_text(full_text, encoding="utf-8")
+        full_text = "\n".join(content_lines)
+        report_path.write_text(full_text, encoding="utf-8")
+        file_bytes = len(full_text.encode("utf-8"))
 
     return GenerateReportOutput(
         status="success",
         file_path=str(report_path.relative_to(settings.workspace_root)),
-        file_size_bytes=len(full_text.encode("utf-8")),
+        file_size_bytes=file_bytes,
         format=args.format,
         created_at=datetime.now(timezone.utc).isoformat(),
         approval_status="APPROVED",

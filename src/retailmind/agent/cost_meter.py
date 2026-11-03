@@ -27,6 +27,7 @@ class TurnCost:
     cached_tokens: int
     candidates_tokens: int
     thinking_tokens: int
+    tool_use_tokens: int
     total_tokens: int
     turn_cost_usd: float
     cumulative_cost_usd: float
@@ -44,9 +45,11 @@ class CostTracker:
     total_cached_tokens: int = 0
     total_candidates_tokens: int = 0
     total_thinking_tokens: int = 0
+    total_tool_use_tokens: int = 0
     total_tokens: int = 0
     cumulative_cost_usd: float = 0.0
     cumulative_billed_cost_usd: float = 0.0
+    billed_status: str = "UNKNOWN_NO_BILLING_EVIDENCE"
     turns: List[TurnCost] = field(default_factory=list)
 
     def pre_flight_check(self) -> None:
@@ -92,23 +95,44 @@ class CostTracker:
                 thinking = usage_metadata.get("thoughts_token_count", 0) or 0
                 tool_prompt = usage_metadata.get("tool_use_prompt_token_count", 0) or 0
 
-        # Avoid double-counting: cached input is a subset of prompt_token_count in Gemini API
+        # Non-cached prompt tokens (cached input is a subset of prompt_token_count in Gemini API)
         non_cached_prompt = max(0, raw_prompt - cached)
-        
-        # Tool-use prompt tokens: if reported separately and not in prompt_token_count, reconcile
-        api_total = getattr(usage_metadata, "total_token_count", None) if usage_metadata else None
-        if api_total and tool_prompt > 0 and (api_total == raw_prompt + raw_candidates + tool_prompt):
-            non_cached_prompt += tool_prompt
 
-        # Output tokens including thinking tokens:
-        # In Gemini API, candidates_token_count already includes thoughts_token_count.
-        # However, if total_token_count explicitly equals raw_prompt + raw_candidates + thinking, add thinking:
+        if hasattr(usage_metadata, "total_token_count"):
+            api_total = getattr(usage_metadata, "total_token_count", None)
+        elif isinstance(usage_metadata, dict):
+            api_total = usage_metadata.get("total_token_count", None)
+        else:
+            api_total = None
+
+        # Reconcile thinking tokens and output tokens
+        # In Gemini API, candidates_token_count typically includes thoughts_token_count
         if api_total and thinking > 0 and (api_total == raw_prompt + raw_candidates + thinking):
             candidates_output = raw_candidates + thinking
         else:
             candidates_output = raw_candidates
 
-        turn_total_tokens = non_cached_prompt + cached + candidates_output
+        # Reconcile tool_use_prompt_tokens
+        tool_tokens_used = 0
+        if tool_prompt > 0:
+            tool_tokens_used = tool_prompt
+            # If tool_prompt was not subsumed under raw_prompt and total includes it:
+            if api_total and (api_total == raw_prompt + candidates_output + tool_prompt):
+                non_cached_prompt += tool_prompt
+            elif not api_total:
+                non_cached_prompt += tool_prompt
+
+        # Total tokens exact reconciliation
+        if api_total is not None and api_total > 0:
+            turn_total_tokens = api_total
+            # Ensure non_cached_prompt + cached + candidates_output equals api_total
+            reconciled_sum = non_cached_prompt + cached + candidates_output
+            if api_total > reconciled_sum:
+                # Assign remainder to non_cached_prompt if tool/system tokens were separate
+                diff = api_total - reconciled_sum
+                non_cached_prompt += diff
+        else:
+            turn_total_tokens = non_cached_prompt + cached + candidates_output
 
         # Paid-tier equivalent rates:
         # Prompt: $0.25 / 1M, Cached: $0.025 / 1M, Output (incl. thinking): $1.50 / 1M
@@ -121,6 +145,7 @@ class CostTracker:
         self.total_cached_tokens += cached
         self.total_candidates_tokens += candidates_output
         self.total_thinking_tokens += thinking
+        self.total_tool_use_tokens += tool_tokens_used
         self.total_tokens += turn_total_tokens
         self.cumulative_cost_usd += turn_cost
         self.cumulative_billed_cost_usd += 0.0
@@ -131,6 +156,7 @@ class CostTracker:
             cached_tokens=cached,
             candidates_tokens=candidates_output,
             thinking_tokens=thinking,
+            tool_use_tokens=tool_tokens_used,
             total_tokens=turn_total_tokens,
             turn_cost_usd=round(turn_cost, 8),
             cumulative_cost_usd=round(self.cumulative_cost_usd, 8),
@@ -153,10 +179,12 @@ class CostTracker:
             "total_cached_tokens": self.total_cached_tokens,
             "total_candidates_tokens": self.total_candidates_tokens,
             "total_thinking_tokens": self.total_thinking_tokens,
+            "total_tool_use_tokens": self.total_tool_use_tokens,
             "total_tokens": self.total_tokens,
             "cumulative_cost_usd": round(self.cumulative_cost_usd, 8),
             "cumulative_cost_usd_display": round(self.cumulative_cost_usd, 6),
             "cumulative_billed_cost_usd": round(self.cumulative_billed_cost_usd, 6),
+            "billed_status": self.billed_status,
             "pricing_source": "Official Gemini API Standard Pricing (https://ai.google.dev/gemini-api/docs/pricing, verified 2026-11-03)",
             "pricing_rates": {
                 "input_per_million": self.usd_per_million_input,

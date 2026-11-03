@@ -536,11 +536,12 @@ elif active_view == "agent":
     if st.session_state.last_generated_report:
         report_p = Path(st.session_state.last_generated_report)
         if report_p.exists():
+            mime_type = "text/csv" if report_p.suffix.lower() == ".csv" else "text/markdown"
             st.download_button(
                 label=t("btn_download_report", lang, filename=report_p.name),
                 data=report_p.read_text(encoding="utf-8"),
                 file_name=report_p.name,
-                mime="text/markdown",
+                mime=mime_type,
             )
 
     # Chat Input Box

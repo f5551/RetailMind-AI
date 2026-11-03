@@ -193,3 +193,37 @@ def test_7_trace_reconciliation():
         assert abs(recorded_cost - expected_cost) < 1e-5, (
             f"{tf_path}: recorded_cost ({recorded_cost}) does not match expected ({expected_cost})"
         )
+
+
+def test_8_tool_use_prompt_tokens_and_total_reconciliation():
+    """Verify tool_use_prompt_token_count, thinking tokens, and total_token_count reconciliation."""
+    tracker = CostTracker(
+        budget_cap_usd=0.10,
+        usd_per_million_input=0.25,
+        usd_per_million_output=1.50,
+        usd_per_million_cached=0.025,
+    )
+
+    # API metadata reporting tool_use_prompt_token_count, thinking, cached
+    usage = {
+        "prompt_token_count": 5000,
+        "cached_content_token_count": 2000,
+        "candidates_token_count": 1500,
+        "thoughts_token_count": 600,
+        "tool_use_prompt_token_count": 400,
+        "total_token_count": 6500,
+    }
+    tc = tracker.record_usage(1, usage)
+
+    assert tc.cached_tokens == 2000
+    assert tc.thinking_tokens == 600
+    assert tc.tool_use_tokens == 400
+    assert tc.total_tokens == 6500
+    assert tracker.total_tokens == 6500
+    assert tracker.billed_status == "UNKNOWN_NO_BILLING_EVIDENCE"
+
+    summary = tracker.to_dict()
+    assert summary["billed_status"] == "UNKNOWN_NO_BILLING_EVIDENCE"
+    assert summary["total_tool_use_tokens"] == 400
+    assert summary["total_thinking_tokens"] == 600
+    assert summary["total_cached_tokens"] == 2000

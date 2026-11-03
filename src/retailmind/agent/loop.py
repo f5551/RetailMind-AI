@@ -503,16 +503,25 @@ class RetailMindAgent:
 
         # 4. Memory Persistence: Record verified result or failure outcome
         if enable_memory and dataset_fingerprint:
-            is_success = (stop_reason == "FINAL_ANSWER")
+            # FIX B5: Only deterministic validated tool results receive is_verified=True
+            has_tool_executions = len(tool_calls_history) > 0
+            all_tools_succeeded = has_tool_executions and all(
+                tc.get("status") == "success" for tc in tool_calls_history
+            )
+            # A final answer without tool calls or with tool failures is NEVER independently verified
+            is_verified = (stop_reason == "FINAL_ANSWER") and all_tools_succeeded
+
+            summary_text = f"Verified: {final_answer}" if is_verified else f"Unverified: {final_answer}"
+
             self.memory_manager.record_task_memory(
                 user_id=user_id,
                 session_id=session_id,
                 task_id=task_id,
                 query=user_query,
                 dataset_fingerprint=dataset_fingerprint,
-                summary=final_answer,
-                task_status="SUCCESS" if is_success else stop_reason,
-                is_verified=is_success,
+                summary=summary_text,
+                task_status="SUCCESS" if (stop_reason == "FINAL_ANSWER") else stop_reason,
+                is_verified=is_verified,
                 tool_calls=tool_calls_history,
             )
 
