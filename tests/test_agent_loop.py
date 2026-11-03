@@ -50,14 +50,14 @@ def test_cost_tracker_thinking_and_cached_tokens():
         budget_cap_usd=0.10,
         usd_per_million_input=0.25,
         usd_per_million_output=1.50,
-        usd_per_million_cached=0.0625,
+        usd_per_million_cached=0.025,
     )
 
     # Turn 1:
     # prompt_token_count = 50,000 (total input)
-    # cached_content_token_count = 20,000 (cached discount)
-    # non-cached prompt = 30,000
-    # candidates_token_count = 5,000 (output, including 2,000 thinking tokens)
+    # cached_content_token_count = 20,000 (cached discount at $0.025/1M)
+    # non-cached prompt = 30,000 at $0.25/1M
+    # candidates_token_count = 5,000 (output, including 2,000 thinking tokens at $1.50/1M)
     # thoughts_token_count = 2,000
     usage = {
         "prompt_token_count": 50000,
@@ -76,10 +76,10 @@ def test_cost_tracker_thinking_and_cached_tokens():
     assert turn1.total_tokens == 55000
 
     # Cost calculation:
-    # (30,000 * 0.25/1M) + (20,000 * 0.0625/1M) + (5,000 * 1.50/1M)
-    # = 0.0075 + 0.00125 + 0.0075 = 0.01625 USD
-    assert round(turn1.turn_cost_usd, 5) == 0.01625
-    assert round(tracker.cumulative_cost_usd, 5) == 0.01625
+    # (30,000 * 0.25/1M) + (20,000 * 0.025/1M) + (5,000 * 1.50/1M)
+    # = 0.0075 + 0.0005 + 0.0075 = 0.01550 USD
+    assert round(turn1.turn_cost_usd, 5) == 0.01550
+    assert round(tracker.cumulative_cost_usd, 5) == 0.01550
     assert tracker.to_dict()["total_thinking_tokens"] == 2000
     assert tracker.to_dict()["total_cached_tokens"] == 20000
 

@@ -21,6 +21,6 @@ Update this matrix ONLY using evidence observed in the running project. Every st
 | T1 | Genuine traces/success_1.jsonl | **PASS** | `traces/success_1.jsonl` (3,188 tokens, $0.000932 USD paid-tier equivalent, $0.00 Free Tier actual billed, 2 turns, tool call: `summarize_sales`, stop reason: `FINAL_ANSWER`). |
 | T2 | Genuine traces/near_failure_recovery.jsonl | NOT VERIFIED | |
 | T3 | Genuine traces/explicit_failure.jsonl | NOT VERIFIED | |
-| C1 | cost_analysis.md with real average $/task and monthly assumptions | NOT VERIFIED | |
+| C1 | cost_analysis.md with real average $/task and monthly assumptions | **PASS** | `cost_analysis.md` (official Gemini API standard pricing verified 2026-11-03, exact average of $0.001096/task for N=5, $0.001067/task for N=6, highest task $0.004150, budget limit $0.10, monthly volume projections, verified Free Tier $0.00 vs paid-tier equivalent). |
 | F1 | All five final submission items linked and verified | NOT VERIFIED | |
 | F2 | Gaps disclosed in final submission email | NOT VERIFIED | |
