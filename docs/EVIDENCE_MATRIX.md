@@ -4,8 +4,8 @@ Update this matrix ONLY using evidence observed in the running project. Every st
 
 | ID | Requirement | Current status | Evidence location / command / URL |
 |---|---|---|---|
-| P1 | One-page agent_spec.md | NOT VERIFIED | |
-| P2 | Goal, 5–10 tools, 3 stop conditions, budget, permissions, 3 I/O examples | NOT VERIFIED | |
+| P1 | One-page agent_spec.md | **PASS** | `agent_spec.md` (47 lines, fits 1 printable page; verified via `pytest tests/test_spec_contracts.py::test_agent_spec_exists_and_fits_one_page`) |
+| P2 | Goal, 5–10 tools, 3 stop conditions, budget, permissions, 3 I/O examples | **PASS** | `agent_spec.md` (1-sentence goal, exactly 8 tools, max_turns=8 + $0.10 cap + final_answer, ask_on_write, 3 synthetic I/O examples; verified via `pytest tests/test_spec_contracts.py::test_agent_spec_contains_mandatory_clauses`) |
 | A1 | Genuine single-agent Gemini tool-calling loop | NOT VERIFIED | |
 | A2 | 5 inputs tested with JSONL traces | NOT VERIFIED | |
 | M1 | Real MCP server + client and model tool routing | NOT VERIFIED | |
