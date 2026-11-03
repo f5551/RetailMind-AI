@@ -1,6 +1,7 @@
 """RetailMind AI — CSV Ingestion, Parsing, and Validation Engine."""
 
 import re
+import os
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -63,7 +64,7 @@ class DatasetManager:
     """Manages active session datasets in memory with cross-process registry support."""
 
     _sessions: Dict[str, ProcessedDataset] = {}
-    REGISTRY_FILE = Path(__file__).resolve().parent.parent.parent.parent / "data" / "session_registry.json"
+    REGISTRY_FILE = Path(os.getenv("RETAILMIND_DATA_DIR", Path(__file__).resolve().parent.parent.parent.parent / "data")) / "session_registry.json"
 
     @classmethod
     def _save_registry_entry(cls, session_id: str, file_path: str, fingerprint: str) -> None:

@@ -3,8 +3,8 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Phase%204%20Verified-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-60%20passed%20(100%25)-success.svg)](docs/PHASE_04_TEST_RESULTS.md)
+[![Status](https://img.shields.io/badge/Phase-Phase%205%20Verified-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-67%20passed%20(100%25)-success.svg)](docs/PHASE_05_TEST_RESULTS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
 
@@ -111,12 +111,33 @@ Copy-Item .env.example .env
 
 ### 4. Run Automated Test Suite
 ```powershell
-# Run the complete test suite (53 tests passing)
+# Run the complete test suite across all 8 modules (67 tests passing)
 pytest -v tests/
 
 # Run the live Gemini + MCP multi-tool demonstration
 python scripts/run_mcp_live_scenarios.py
+
+# Run Phase 4 adversarial prompt injection attacks & trace verification
+python scripts/run_phase4_scenarios.py
 ```
+
+### 5. Launch the Streamlit Web Application
+```powershell
+# Launch the local Streamlit SaaS dashboard
+streamlit run app.py
+```
+Open your browser to `http://localhost:8501`.
+
+---
+
+## ☁️ Cloud Deployment (Railway)
+
+RetailMind AI is fully configured for deployment on [Railway](https://railway.app/) using `Procfile`, `railway.json`, or `Dockerfile`.
+
+1. **Volume Attachment:** Attach a Railway Volume to `/app/data` and configure `RETAILMIND_DATA_DIR=/app/data` to ensure SQLite memory and audit records persist across deployments.
+2. **Environment Variables:** Configure `GEMINI_API_KEY`, `GEMINI_MODEL`, `MAX_TURNS`, `BUDGET_PER_TASK_USD`, and `PERMISSION_POLICY`.
+3. **Healthcheck:** Validated on `/_stcore/health`.
+4. Detailed setup instructions: see [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md).
 
 ---
 
@@ -125,7 +146,7 @@ python scripts/run_mcp_live_scenarios.py
 1. **No Real Secrets in Version Control**: API keys must be loaded exclusively via environment variables (`.env`).
 2. **Customer Data Isolation**: Uploaded CSV files and SQLite databases containing customer records are git-ignored. Only non-confidential synthetic data in `sample_data/` is versioned.
 3. **Prompt Injection Defense**: All CSV cell contents, column headers, and filenames are treated strictly as untrusted data inputs, never as execution instructions.
-4. **Approval Enforcement**: Write operations (`generate_report`) are gated by executable code-level approvals.
+4. **Approval Enforcement**: Write operations (`generate_report`) are gated by executable code-level approvals and capability tickets.
 
 ---
 
@@ -138,4 +159,4 @@ python scripts/run_mcp_live_scenarios.py
 - [x] **Phase 2.2 — Final Cost Accounting Audit**: 100% reconciled arithmetic, verified cached rates, cost tests (42/42 passing).
 - [x] **Phase 3 — MCP & Persistent Memory**: Real MCP SDK v2 (`mcp==2.3.0`) stdio server & client, 8 tools routed dynamically, persistent SQLite memory surviving complete process restart, live Gemini+MCP traces (53/53 tests passing).
 - [x] **Phase 4 — Safety, Approvals & Cost Metering**: 3 hostile injection tests defended, capability-based write approval tickets, append-only SQLite audit log, official submission traces (60/60 tests passing).
-- [ ] **Phase 5 — Streamlit UI & Public Deployment**: Interactive UI, cloud deployment, final submission validation.
+- [x] **Phase 5 — Streamlit UI & Cloud Deployment**: Full 5-view SaaS interface (`app.py`), live chat with Gemini+MCP, human write approval banner, Railway deployment configs, automated UI tests (67/67 tests passing).
