@@ -3,10 +3,10 @@
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/Phase-Phase%205%20Verified-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-67%20passed%20(100%25)-success.svg)](docs/PHASE_05_TEST_RESULTS.md)
+[![Status](https://img.shields.io/badge/Phase-Bilingual%20UI%20Verified-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-74%20passed%20(100%25)-success.svg)](docs/PHASE_05_TEST_RESULTS.md)
 
-**RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation.
+**RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 
 ---
 
@@ -111,7 +111,7 @@ Copy-Item .env.example .env
 
 ### 4. Run Automated Test Suite
 ```powershell
-# Run the complete test suite across all 8 modules (67 tests passing)
+# Run the complete test suite across all 9 modules (74 tests passing)
 pytest -v tests/
 
 # Run the live Gemini + MCP multi-tool demonstration
@@ -160,3 +160,4 @@ RetailMind AI is fully configured for deployment on [Railway](https://railway.ap
 - [x] **Phase 3 — MCP & Persistent Memory**: Real MCP SDK v2 (`mcp==2.3.0`) stdio server & client, 8 tools routed dynamically, persistent SQLite memory surviving complete process restart, live Gemini+MCP traces (53/53 tests passing).
 - [x] **Phase 4 — Safety, Approvals & Cost Metering**: 3 hostile injection tests defended, capability-based write approval tickets, append-only SQLite audit log, official submission traces (60/60 tests passing).
 - [x] **Phase 5 — Streamlit UI & Cloud Deployment**: Full 5-view SaaS interface (`app.py`), live chat with Gemini+MCP, human write approval banner, Railway deployment configs, automated UI tests (67/67 tests passing).
+- [x] **Phase 5.1 — Full Bilingual (Arabic/English) Toggle**: Centralized `i18n.py` dictionary, scoped RTL layout with Cairo typography, trusted language directives for Gemini, session state preservation (74/74 tests passing).

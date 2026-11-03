@@ -118,6 +118,7 @@ class RetailMindAgent:
         approval_callback: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         save_trace_path: Optional[Path] = None,
         enable_memory: bool = True,
+        language: str = "en",
     ) -> AgentResult:
         """Executes a single-agent reasoning loop on a user task synchronously.
         
@@ -140,6 +141,7 @@ class RetailMindAgent:
                             approval_callback=approval_callback,
                             save_trace_path=save_trace_path,
                             enable_memory=enable_memory,
+                            language=language,
                         )
                     )
                 ).result()
@@ -153,6 +155,7 @@ class RetailMindAgent:
                     approval_callback=approval_callback,
                     save_trace_path=save_trace_path,
                     enable_memory=enable_memory,
+                    language=language,
                 )
             )
 
@@ -165,6 +168,7 @@ class RetailMindAgent:
         approval_callback: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         save_trace_path: Optional[Path] = None,
         enable_memory: bool = True,
+        language: str = "en",
     ) -> AgentResult:
         """Core asynchronous agent execution loop."""
         task_id = str(uuid.uuid4())[:8]
@@ -199,6 +203,7 @@ class RetailMindAgent:
                 "query": user_query,
                 "model": self.model_id,
                 "user_id": user_id,
+                "language": language,
                 "execution_transport": self.execution_transport,
                 "dataset_fingerprint": dataset_fingerprint[:12] if dataset_fingerprint else None,
                 "recalled_memory_count": recalled_count,
@@ -241,8 +246,23 @@ class RetailMindAgent:
 
         try:
             tool_config = types.Tool(function_declarations=gemini_declarations)
+
+            if language == "ar":
+                lang_directive = (
+                    "\n\nPRESENTATION & LANGUAGE DIRECTIVE (TRUSTED USER PREFERENCE):\n"
+                    "The user interface language is ARABIC. You MUST formulate your final answer, synthesis, explanations, and insights completely in professional ARABIC (العربية).\n"
+                    "- Preserve exact numbers, currency figures ($), dates, percentages, and metrics from tool outputs without modification.\n"
+                    "- Keep tool names, column names, and technical codes in their original English form where relevant.\n"
+                    "- Do NOT alter any tool arguments or schemas."
+                )
+            else:
+                lang_directive = (
+                    "\n\nPRESENTATION & LANGUAGE DIRECTIVE (TRUSTED USER PREFERENCE):\n"
+                    "The user interface language is ENGLISH. Formulate your final answer, synthesis, explanations, and insights in English."
+                )
+
             gen_config = types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=SYSTEM_INSTRUCTION + lang_directive,
                 tools=[tool_config],
                 temperature=0.1,
             )
