@@ -3,6 +3,7 @@
 All calculations are performed deterministically with zero LLM math hallucinations.
 """
 
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -97,9 +98,14 @@ def summarize_sales(args: SummarizeSalesInput) -> Dict[str, Any]:
     net_units = float(df["quantity"].sum()) if total_orders > 0 else 0.0
     net_revenue = float(df["line_revenue"].sum()) if total_orders > 0 else 0.0
 
+    if not math.isfinite(net_units) or not math.isfinite(net_revenue):
+        raise ValueError("Non-finite numerical result detected in sales summary.")
+
     # Profit and margin policy: only if cost is present for all valid rows
     if dataset.has_cost_data and total_orders > 0:
         net_profit = float(df["line_profit"].sum())
+        if not math.isfinite(net_profit):
+            raise ValueError("Non-finite profit detected in sales summary.")
         margin_pct = float((net_profit / net_revenue * 100.0) if net_revenue != 0 else 0.0)
         profit_metrics = {
             "available": True,

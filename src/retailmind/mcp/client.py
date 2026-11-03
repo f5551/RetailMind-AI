@@ -46,10 +46,15 @@ class RetailMindMCPClient:
         server_command: Optional[str] = None,
         server_args: Optional[List[str]] = None,
         server_env: Optional[Dict[str, str]] = None,
+        caller_user_id: str = "default_user",
     ):
         self.server_command = server_command or sys.executable
         self.server_args = server_args or ["-m", "src.retailmind.mcp.server"]
-        self.server_env = server_env or dict(os.environ)
+        self.caller_user_id = caller_user_id
+        env = dict(server_env or os.environ)
+        if "RETAILMIND_CALLER_USER_ID" not in env:
+            env["RETAILMIND_CALLER_USER_ID"] = caller_user_id
+        self.server_env = env
 
         self._exit_stack: Optional[AsyncExitStack] = None
         self._session: Optional[ClientSession] = None
@@ -137,15 +142,22 @@ class RetailMindMCPClient:
 
         for name, tool in self._discovered_tools.items():
             if name in vetted_map:
-                v_def = vetted_map[name]
+                v_def = dict(vetted_map[name])
+                params = dict(v_def["parameters"])
+                if "properties" in params:
+                    clean_props = {k: v for k, v in params["properties"].items() if k not in ("caller_user_id", "auth_ticket")}
+                    clean_req = [r for r in params.get("required", []) if r not in ("caller_user_id", "auth_ticket")]
+                    params = dict(params, properties=clean_props, required=clean_req)
                 decl = genai_types.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description or v_def["description"],
-                    parameters=v_def["parameters"],
+                    parameters=params,
                 )
             else:
                 schema = tool.input_schema or {"type": "object", "properties": {}}
                 cleaned_schema = self._clean_schema_for_gemini(schema)
+                if "properties" in cleaned_schema:
+                    cleaned_schema["properties"] = {k: v for k, v in cleaned_schema["properties"].items() if k not in ("caller_user_id", "auth_ticket")}
                 decl = genai_types.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description or "",
@@ -192,8 +204,12 @@ class RetailMindMCPClient:
         if name not in self._discovered_tools:
             raise ValueError(f"Tool '{name}' is not registered on the MCP server.")
 
+        args = dict(arguments)
+        if "caller_user_id" not in args and self.caller_user_id:
+            args["caller_user_id"] = self.caller_user_id
+
         try:
-            call_res = await self._session.call_tool(name=name, arguments=arguments)
+            call_res = await self._session.call_tool(name=name, arguments=args)
 
             if call_res.is_error:
                 error_text = "Tool reported error."

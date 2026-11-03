@@ -76,7 +76,12 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
-def dispatch_tool_call(tool_name: str, arguments: Dict[str, Any], is_approved: bool = False) -> Dict[str, Any]:
+def dispatch_tool_call(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    is_approved: bool = False,
+    caller_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Deterministically validates and executes a tool call."""
     if tool_name not in TOOL_REGISTRY:
         return {
@@ -85,12 +90,28 @@ def dispatch_tool_call(tool_name: str, arguments: Dict[str, Any], is_approved: b
             "message": f"Tool '{tool_name}' is not an authorized tool. Allowed tools: {list(TOOL_REGISTRY.keys())}",
         }
 
+    # Enforce tenant session ownership if caller_user_id is passed or in arguments
+    effective_caller = caller_user_id or arguments.get("caller_user_id")
+    target_session = arguments.get("session_id")
+    if effective_caller and target_session:
+        from src.retailmind.data.loader import DatasetManager
+        owner = DatasetManager.get_session_owner(target_session)
+        if owner is not None and owner != effective_caller:
+            return {
+                "status": "error",
+                "error_code": "PERMISSION_DENIED",
+                "message": f"PERMISSION_DENIED: Access to session '{target_session}' is not authorized for caller '{effective_caller}'.",
+            }
+
+    # Clean internal transport fields before Pydantic schema validation
+    clean_args = {k: v for k, v in arguments.items() if k not in ("caller_user_id", "auth_ticket")}
+
     meta = TOOL_REGISTRY[tool_name]
     schema_cls = meta["schema"]
     func: Callable = meta["function"]
 
     try:
-        validated_input = schema_cls.model_validate(arguments)
+        validated_input = schema_cls.model_validate(clean_args)
     except ValidationError as ve:
         return {
             "status": "error",

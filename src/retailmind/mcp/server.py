@@ -11,15 +11,16 @@ Exposes exactly the eight approved CSV sales analytics tools:
 7. segment_sales
 8. generate_report
 
-Runs independently and communicates via official MCP stdio transport.
-Reuses validated deterministic Python business logic from src.retailmind.tools.implementations.
+Enforces strict session ownership validation across all eight tools to prevent
+unauthorized cross-tenant data access or direct MCP parameter tampering.
 """
 
 import asyncio
 import json
 import logging
+import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from mcp.server import MCPServer
 from src.retailmind.tools.registry import dispatch_tool_call
@@ -30,33 +31,88 @@ logger = logging.getLogger("retailmind.mcp.server")
 server = MCPServer(name="retailmind-sales-server", version="1.0.0")
 
 
+def _verify_session_ownership(session_id: str, caller_user_id: Optional[str] = None) -> Tuple[bool, str]:
+    """Validates session ownership inside the MCP server.
+
+    Ensures data access is strictly bounded to the authorized caller.
+    """
+    if not session_id or not isinstance(session_id, str):
+        return False, "Invalid or missing session_id."
+
+    from src.retailmind.data.loader import DatasetManager
+
+    owner = DatasetManager.get_session_owner(session_id)
+    if not owner:
+        return True, ""
+
+    effective_caller = caller_user_id or os.getenv("RETAILMIND_CALLER_USER_ID")
+    if not effective_caller:
+        return False, f"Access Denied: Missing caller identity for session '{session_id}'."
+
+    if owner != effective_caller:
+        logger.warning(
+            "Access Denied: Caller '%s' is not authorized to access session '%s' owned by '%s'",
+            effective_caller,
+            session_id,
+            owner,
+        )
+        return False, f"PERMISSION_DENIED: Access to session '{session_id}' is not authorized for caller '{effective_caller}'."
+
+    return True, ""
+
+
 def _safe_dispatch(tool_name: str, args: Dict[str, Any], is_approved: bool = False) -> str:
     """Dispatches tool call safely, sanitizing exceptions to prevent path or secret leaks."""
     try:
-        result = dispatch_tool_call(tool_name, args, is_approved=is_approved)
+        # Strip internal security arguments before dispatching to tool schemas
+        dispatch_args = {k: v for k, v in args.items() if k not in ("caller_user_id", "auth_ticket")}
+        result = dispatch_tool_call(tool_name, dispatch_args, is_approved=is_approved)
         return json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         err_msg = str(exc)
-        # Redact raw file paths if present in message
         if "C:\\" in err_msg or "/home" in err_msg or "\\" in err_msg:
             err_msg = "A dataset access or calculation error occurred."
         return json.dumps({"status": "error", "message": err_msg, "tool": tool_name})
+
+
+def _guard_and_dispatch(
+    tool_name: str,
+    session_id: str,
+    caller_user_id: Optional[str],
+    args: Dict[str, Any],
+    is_approved: bool = False,
+) -> str:
+    is_valid, err_msg = _verify_session_ownership(session_id, caller_user_id)
+    if not is_valid:
+        error_code = "PERMISSION_DENIED" if ("PERMISSION_DENIED" in err_msg or "Access Denied" in err_msg) else "SESSION_NOT_FOUND"
+        return json.dumps(
+            {
+                "status": "error",
+                "error_code": error_code,
+                "message": err_msg,
+                "tool": tool_name,
+            },
+            ensure_ascii=False,
+        )
+    return _safe_dispatch(tool_name, args, is_approved=is_approved)
 
 
 @server.tool(
     name="inspect_dataset",
     description="Returns row count, column inventory, detected types, date range, and preview sample rows for an active session.",
 )
-def tool_inspect_dataset(session_id: str, sample_size: int = 3) -> str:
-    return _safe_dispatch("inspect_dataset", {"session_id": session_id, "sample_size": sample_size})
+def tool_inspect_dataset(session_id: str, sample_size: int = 3, caller_user_id: Optional[str] = None) -> str:
+    args = {"session_id": session_id, "sample_size": sample_size}
+    return _guard_and_dispatch("inspect_dataset", session_id, caller_user_id, args)
 
 
 @server.tool(
     name="validate_dataset",
     description="Audits CSV data against contract rules, returns quarantined rows count, issues, and profit availability.",
 )
-def tool_validate_dataset(session_id: str) -> str:
-    return _safe_dispatch("validate_dataset", {"session_id": session_id})
+def tool_validate_dataset(session_id: str, caller_user_id: Optional[str] = None) -> str:
+    args = {"session_id": session_id}
+    return _guard_and_dispatch("validate_dataset", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -68,11 +124,10 @@ def tool_summarize_sales(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     group_by: Optional[str] = None,
+    caller_user_id: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "summarize_sales",
-        {"session_id": session_id, "start_date": start_date, "end_date": end_date, "group_by": group_by},
-    )
+    args = {"session_id": session_id, "start_date": start_date, "end_date": end_date, "group_by": group_by}
+    return _guard_and_dispatch("summarize_sales", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -84,11 +139,10 @@ def tool_rank_products(
     metric: str = "revenue",
     top_n: int = 5,
     ascending: bool = False,
+    caller_user_id: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "rank_products",
-        {"session_id": session_id, "metric": metric, "top_n": top_n, "ascending": ascending},
-    )
+    args = {"session_id": session_id, "metric": metric, "top_n": top_n, "ascending": ascending}
+    return _guard_and_dispatch("rank_products", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -99,11 +153,10 @@ def tool_compare_periods(
     session_id: str,
     period_a: Dict[str, Any],
     period_b: Dict[str, Any],
+    caller_user_id: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "compare_periods",
-        {"session_id": session_id, "period_a": period_a, "period_b": period_b},
-    )
+    args = {"session_id": session_id, "period_a": period_a, "period_b": period_b}
+    return _guard_and_dispatch("compare_periods", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -115,11 +168,10 @@ def tool_detect_anomalies(
     column: str = "revenue",
     method: str = "zscore",
     threshold: float = 2.5,
+    caller_user_id: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "detect_anomalies",
-        {"session_id": session_id, "column": column, "method": method, "threshold": threshold},
-    )
+    args = {"session_id": session_id, "column": column, "method": method, "threshold": threshold}
+    return _guard_and_dispatch("detect_anomalies", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -130,11 +182,10 @@ def tool_segment_sales(
     session_id: str,
     dimension: str = "category",
     secondary_dimension: Optional[str] = None,
+    caller_user_id: Optional[str] = None,
 ) -> str:
-    return _safe_dispatch(
-        "segment_sales",
-        {"session_id": session_id, "dimension": dimension, "secondary_dimension": secondary_dimension},
-    )
+    args = {"session_id": session_id, "dimension": dimension, "secondary_dimension": secondary_dimension}
+    return _guard_and_dispatch("segment_sales", session_id, caller_user_id, args)
 
 
 @server.tool(
@@ -147,7 +198,22 @@ def tool_generate_report(
     sections: List[Dict[str, Any]],
     format: str = "markdown",
     auth_ticket: Optional[str] = None,
+    caller_user_id: Optional[str] = None,
 ) -> str:
+    # 1. Enforce session ownership
+    is_valid_owner, err_msg = _verify_session_ownership(session_id, caller_user_id)
+    if not is_valid_owner:
+        return json.dumps(
+            {
+                "status": "error",
+                "error_code": "PERMISSION_DENIED",
+                "message": err_msg,
+                "approval_status": "DENIED",
+            },
+            ensure_ascii=False,
+        )
+
+    # 2. Enforce human write authorization ticket
     from src.retailmind.agent.auth_service import AuthorizationService
 
     args = {

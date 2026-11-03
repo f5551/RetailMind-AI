@@ -66,7 +66,7 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = f"sess_{uuid.uuid4().hex[:8]}"
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "retail_analyst_demo"
+    st.session_state.user_id = f"user_{uuid.uuid4().hex[:12]}"
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -160,9 +160,11 @@ with header_col2:
 # Dataset Helper Functions
 # -----------------------------------------------------------------------------
 def load_dataset_from_path(file_path: Path, filename: str) -> ProcessedDataset:
-    processed = DatasetManager.register_dataset(st.session_state.session_id, file_path)
+    processed = DatasetManager.register_dataset(
+        st.session_state.session_id, file_path, user_id=st.session_state.user_id
+    )
     st.session_state.dataset_loaded = True
-    st.session_state.active_csv_path = file_path
+    st.session_state.active_csv_path = processed.snapshot_path
     st.session_state.active_filename = filename
     st.session_state.dataset_fingerprint = processed.fingerprint
     return processed
@@ -170,9 +172,11 @@ def load_dataset_from_path(file_path: Path, filename: str) -> ProcessedDataset:
 
 def load_dataset_from_bytes(file_bytes: bytes, filename: str) -> ProcessedDataset:
     df = pd.read_csv(io.BytesIO(file_bytes))
-    processed = DatasetManager.register_dataset(st.session_state.session_id, df)
+    processed = DatasetManager.register_dataset(
+        st.session_state.session_id, df, user_id=st.session_state.user_id
+    )
     st.session_state.dataset_loaded = True
-    st.session_state.active_csv_path = None
+    st.session_state.active_csv_path = processed.snapshot_path
     st.session_state.active_filename = filename
     st.session_state.dataset_fingerprint = processed.fingerprint
     return processed
@@ -482,7 +486,7 @@ elif active_view == "agent":
                 )
 
                 async def execute_approved_report():
-                    client = RetailMindMCPClient()
+                    client = RetailMindMCPClient(caller_user_id=st.session_state.user_id)
                     async with client:
                         call_args = dict(pending["args"], auth_ticket=ticket)
                         return await client.call_tool("generate_report", call_args)
@@ -682,7 +686,7 @@ elif active_view == "audit":
     st.caption(t("audit_caption", lang))
 
     audit_logger = AuditLogger.get_default_logger()
-    events = audit_logger.query_events(limit=50)
+    events = audit_logger.query_events(user_id=st.session_state.user_id, limit=50)
 
     st.markdown(t("lbl_db_location", lang, path=audit_logger.db_path))
     st.markdown(t("lbl_recent_events", lang, count=len(events)))

@@ -176,7 +176,7 @@ class RetailMindAgent:
         # 1. Register CSV if provided
         dataset_fingerprint = ""
         if csv_path:
-            processed = DatasetManager.register_dataset(session_id, csv_path)
+            processed = DatasetManager.register_dataset(session_id, csv_path, user_id=user_id)
             dataset_fingerprint = processed.fingerprint
         else:
             try:
@@ -219,7 +219,7 @@ class RetailMindAgent:
         # 3. Setup MCP Client if execution_transport == "mcp"
         mcp_client: Optional[RetailMindMCPClient] = None
         if self.execution_transport == "mcp":
-            mcp_client = RetailMindMCPClient()
+            mcp_client = RetailMindMCPClient(caller_user_id=user_id)
             try:
                 await mcp_client.connect()
                 gemini_declarations = mcp_client.get_gemini_tool_declarations()
@@ -344,8 +344,9 @@ class RetailMindAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
 
-                        if "session_id" not in tool_args:
+                        if "session_id" not in tool_args or not tool_args["session_id"]:
                             tool_args["session_id"] = session_id
+                        tool_args["caller_user_id"] = user_id
 
                         # Enforce executable permission layer
                         is_approved = self.permission_manager.check_permission(
@@ -393,7 +394,7 @@ class RetailMindAgent:
                                 if self.execution_transport == "mcp" and mcp_client:
                                     observation = await mcp_client.call_tool(tool_name, tool_args_with_ticket)
                                 else:
-                                    observation = dispatch_tool_call(tool_name, tool_args, is_approved=True)
+                                    observation = dispatch_tool_call(tool_name, tool_args, is_approved=True, caller_user_id=user_id)
 
                                 self.audit_logger.log_event(
                                     task_id=task_id,
@@ -416,7 +417,7 @@ class RetailMindAgent:
                             if self.execution_transport == "mcp" and mcp_client:
                                 observation = await mcp_client.call_tool(tool_name, tool_args)
                             else:
-                                observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved)
+                                observation = dispatch_tool_call(tool_name, tool_args, is_approved=is_approved, caller_user_id=user_id)
 
                             self.audit_logger.log_event(
                                 task_id=task_id,

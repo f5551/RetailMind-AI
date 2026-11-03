@@ -1,14 +1,17 @@
-"""RetailMind AI — CSV Ingestion, Parsing, and Validation Engine."""
+"""RetailMind AI — CSV Ingestion, Parsing, Validation & Cross-Process Synchronization Engine."""
 
-import re
-import os
 import hashlib
 import json
+import math
+import os
+import re
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import pandas as pd
 
+import pandas as pd
 
 # Forbidden leading formula injection characters
 FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -40,6 +43,7 @@ class ProcessedDataset:
     duplicate_rows_count: int = 0
     date_range: Tuple[Optional[str], Optional[str]] = (None, None)
     fingerprint: str = ""
+    snapshot_path: Optional[str] = None
 
 
 def sanitize_cell_value(val: Any) -> Any:
@@ -61,13 +65,23 @@ def sanitize_cell_value(val: Any) -> Any:
 
 
 class DatasetManager:
-    """Manages active session datasets in memory with cross-process registry support."""
+    """Manages active session datasets in memory with cross-process registry and snapshot synchronization."""
 
     _sessions: Dict[str, ProcessedDataset] = {}
-    REGISTRY_FILE = Path(os.getenv("RETAILMIND_DATA_DIR", Path(__file__).resolve().parent.parent.parent.parent / "data")) / "session_registry.json"
+    DATA_DIR = Path(os.getenv("RETAILMIND_DATA_DIR", Path(__file__).resolve().parent.parent.parent.parent / "data"))
+    REGISTRY_FILE = DATA_DIR / "session_registry.json"
+    SNAPSHOTS_DIR = DATA_DIR / "snapshots"
 
     @classmethod
-    def _save_registry_entry(cls, session_id: str, file_path: str, fingerprint: str) -> None:
+    def _atomic_write_file(cls, target_path: Path, content: str) -> None:
+        """Writes content atomically to a file using a process-safe temporary file and atomic replace."""
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = target_path.with_suffix(f"{target_path.suffix}.tmp_{os.getpid()}_{uuid.uuid4().hex[:6]}")
+        temp_path.write_text(content, encoding="utf-8")
+        os.replace(temp_path, target_path)
+
+    @classmethod
+    def _save_registry_entry(cls, session_id: str, file_path: str, fingerprint: str, user_id: str = "default_user") -> None:
         try:
             cls.REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
             registry = {}
@@ -76,13 +90,18 @@ class DatasetManager:
                     registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
                 except Exception:
                     registry = {}
-            registry[session_id] = {"path": file_path, "fingerprint": fingerprint}
-            cls.REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+            registry[session_id] = {
+                "path": file_path,
+                "fingerprint": fingerprint,
+                "user_id": user_id,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            cls._atomic_write_file(cls.REGISTRY_FILE, json.dumps(registry, indent=2))
         except Exception:
             pass
 
     @classmethod
-    def _load_registry_entry(cls, session_id: str) -> Optional[Dict[str, str]]:
+    def _load_registry_entry(cls, session_id: str) -> Optional[Dict[str, Any]]:
         if cls.REGISTRY_FILE.exists():
             try:
                 registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
@@ -92,8 +111,35 @@ class DatasetManager:
         return None
 
     @classmethod
-    def register_dataset(cls, session_id: str, csv_path_or_df: Any) -> ProcessedDataset:
-        """Loads, cleans, validates, and registers a dataset for a session."""
+    def get_session_owner(cls, session_id: str) -> Optional[str]:
+        """Returns the trusted user_id owning the registered session, or None."""
+        entry = cls._load_registry_entry(session_id)
+        if entry:
+            return entry.get("user_id")
+        return None
+
+    @classmethod
+    def register_dataset(
+        cls,
+        session_id: str,
+        csv_path_or_df: Any,
+        user_id: Optional[str] = None,
+    ) -> ProcessedDataset:
+        """Loads, cleans, validates, and registers a dataset for a session.
+
+        Guarantees that uploaded DataFrames and file paths are saved to a durable,
+        session-bound snapshot under SNAPSHOTS_DIR, accessible across separate processes.
+        """
+        if not session_id or not isinstance(session_id, str):
+            raise ValueError("session_id must be a non-empty string.")
+
+        # Prevent path traversal
+        clean_session = re.sub(r"[^a-zA-Z0-9_\-]", "", session_id)
+        if not clean_session:
+            raise ValueError("session_id contains invalid characters.")
+
+        effective_user = user_id or "default_user"
+
         if isinstance(csv_path_or_df, (str, Path)):
             path = Path(csv_path_or_df)
             if not path.exists():
@@ -118,23 +164,54 @@ class DatasetManager:
             raise ValueError("Dataset exceeds 50,000 maximum allowed row count limit.")
 
         processed = cls._process_raw_dataframe(raw_df)
-        processed.fingerprint = hashlib.sha256(raw_df.to_csv(index=False).encode("utf-8")).hexdigest()
+        csv_text = raw_df.to_csv(index=False)
+        processed.fingerprint = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+
+        # Atomic persistence of session snapshot for cross-process MCP synchronization
+        cls.SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        snapshot_file = cls.SNAPSHOTS_DIR / f"snapshot_{clean_session}.csv"
+        cls._atomic_write_file(snapshot_file, csv_text)
+
+        processed.snapshot_path = str(snapshot_file.resolve())
         cls._sessions[session_id] = processed
 
-        if isinstance(csv_path_or_df, (str, Path)):
-            cls._save_registry_entry(session_id, str(Path(csv_path_or_df).resolve()), processed.fingerprint)
+        cls._save_registry_entry(
+            session_id=session_id,
+            file_path=str(snapshot_file.resolve()),
+            fingerprint=processed.fingerprint,
+            user_id=effective_user,
+        )
 
         return processed
 
     @classmethod
     def get_dataset(cls, session_id: str) -> ProcessedDataset:
-        """Retrieves processed dataset for a session, or raises KeyError."""
-        if session_id not in cls._sessions:
-            entry = cls._load_registry_entry(session_id)
-            if entry and Path(entry.get("path", "")).exists():
-                return cls.register_dataset(session_id, entry["path"])
-            raise KeyError(f"No dataset found for session '{session_id}'. Please upload or inspect dataset first.")
-        return cls._sessions[session_id]
+        """Retrieves processed dataset for a session, reloading from snapshot if updated across processes."""
+        entry = cls._load_registry_entry(session_id)
+        if entry:
+            reg_path = Path(entry.get("path", ""))
+            reg_fp = entry.get("fingerprint", "")
+            if session_id in cls._sessions:
+                cached = cls._sessions[session_id]
+                if cached.fingerprint == reg_fp:
+                    return cached
+
+            # Reload from snapshot file
+            if reg_path.exists():
+                try:
+                    raw_df = pd.read_csv(reg_path, encoding="utf-8", dtype=str)
+                except UnicodeDecodeError:
+                    raw_df = pd.read_csv(reg_path, encoding="latin-1", dtype=str)
+                processed = cls._process_raw_dataframe(raw_df)
+                processed.fingerprint = reg_fp
+                processed.snapshot_path = str(reg_path.resolve())
+                cls._sessions[session_id] = processed
+                return processed
+
+        if session_id in cls._sessions:
+            return cls._sessions[session_id]
+
+        raise KeyError(f"No dataset found for session '{session_id}'. Please upload or inspect dataset first.")
 
     @classmethod
     def get_dataset_fingerprint(cls, session_id: str) -> str:
@@ -144,20 +221,32 @@ class DatasetManager:
 
     @classmethod
     def clear_session(cls, session_id: str) -> None:
-        """Removes a session dataset from memory and registry."""
+        """Removes a session dataset from memory, registry, and cleans up its snapshot file."""
         cls._sessions.pop(session_id, None)
+        entry = cls._load_registry_entry(session_id)
+        if entry:
+            snapshot_path = Path(entry.get("path", ""))
+            if snapshot_path.exists() and "snapshots" in str(snapshot_path):
+                try:
+                    snapshot_path.unlink()
+                except Exception:
+                    pass
         if cls.REGISTRY_FILE.exists():
             try:
                 registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
                 if session_id in registry:
                     del registry[session_id]
-                    cls.REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+                    cls._atomic_write_file(cls.REGISTRY_FILE, json.dumps(registry, indent=2))
             except Exception:
                 pass
 
     @classmethod
     def _process_raw_dataframe(cls, raw_df: pd.DataFrame) -> ProcessedDataset:
-        """Audits, normalizes, and segments rows into valid vs quarantined."""
+        """Audits, normalizes, and segments rows into valid vs quarantined.
+
+        Enforces strict numeric finiteness (rejecting NaN, Infinity, -Infinity) while
+        preserving legitimate negative returns (quantity < 0).
+        """
         issues: List[ValidationIssue] = []
 
         # Standardize column headers: lowercase, stripped
@@ -175,7 +264,6 @@ class DatasetManager:
         valid_indices: List[int] = []
         quarantined_indices: List[int] = []
 
-        # Convert and validate row by row
         parsed_dates = []
         parsed_quantities = []
         parsed_unit_prices = []
@@ -195,45 +283,62 @@ class DatasetManager:
             # 2. Date check (ISO-8601 YYYY-MM-DD or standard parseable)
             date_raw = str(row.get("date", "")).strip()
             parsed_date_val = None
-            try:
-                parsed_dt = pd.to_datetime(date_raw, errors="raise")
-                parsed_date_val = parsed_dt.strftime("%Y-%m-%d")
-            except Exception:
-                issues.append(ValidationIssue(idx, "INVALID_DATE_FORMAT", "date", f"Value '{date_raw}' failed ISO-8601 parsing"))
+            if not date_raw or date_raw.lower() in ("nan", "none", "null", "nat"):
+                issues.append(ValidationIssue(idx, "INVALID_DATE_FORMAT", "date", "Date field is empty or null"))
                 row_has_issue = True
+            else:
+                try:
+                    parsed_dt = pd.to_datetime(date_raw, errors="raise")
+                    parsed_date_val = parsed_dt.strftime("%Y-%m-%d")
+                except Exception:
+                    issues.append(ValidationIssue(idx, "INVALID_DATE_FORMAT", "date", f"Value '{date_raw}' failed ISO-8601 parsing"))
+                    row_has_issue = True
 
-            # 3. Quantity check (numeric, non-zero)
+            # 3. Quantity check (numeric, non-zero, finite; negative allowed for returns)
             qty_raw = str(row.get("quantity", "")).strip()
             parsed_qty_val = None
             try:
-                parsed_qty_val = float(qty_raw)
-                if parsed_qty_val == 0:
+                parsed_qty = float(qty_raw)
+                if not math.isfinite(parsed_qty):
+                    issues.append(ValidationIssue(idx, "NON_FINITE_NUMERIC", "quantity", f"Quantity '{qty_raw}' is non-finite (NaN/Infinity)"))
+                    row_has_issue = True
+                elif parsed_qty == 0:
                     issues.append(ValidationIssue(idx, "ZERO_QUANTITY", "quantity", "Quantity cannot be zero"))
                     row_has_issue = True
+                else:
+                    parsed_qty_val = parsed_qty
             except ValueError:
                 issues.append(ValidationIssue(idx, "INVALID_NUMERIC", "quantity", f"Quantity '{qty_raw}' is not a valid number"))
                 row_has_issue = True
 
-            # 4. Unit Price check (numeric, >= 0)
+            # 4. Unit Price check (numeric, >= 0, finite)
             price_raw = str(row.get("unit_price", "")).strip()
             parsed_price_val = None
             try:
-                parsed_price_val = float(price_raw)
-                if parsed_price_val < 0:
+                parsed_price = float(price_raw)
+                if not math.isfinite(parsed_price):
+                    issues.append(ValidationIssue(idx, "NON_FINITE_NUMERIC", "unit_price", f"Unit price '{price_raw}' is non-finite (NaN/Infinity)"))
+                    row_has_issue = True
+                elif parsed_price < 0:
                     issues.append(ValidationIssue(idx, "NEGATIVE_PRICE", "unit_price", f"Unit price '{price_raw}' cannot be negative"))
                     row_has_issue = True
+                else:
+                    parsed_price_val = parsed_price
             except ValueError:
                 issues.append(ValidationIssue(idx, "INVALID_NUMERIC", "unit_price", f"Unit price '{price_raw}' is not a valid number"))
                 row_has_issue = True
 
-            # 5. Unit Cost check (optional, if present must be >= 0)
+            # 5. Unit Cost check (optional, if present must be >= 0 and finite)
             parsed_cost_val = None
             if has_cost_col:
                 cost_raw = str(row.get("unit_cost", "")).strip()
-                if cost_raw and cost_raw.lower() not in ("nan", "none", "null"):
+                if cost_raw and cost_raw.lower() not in ("nan", "none", "null", ""):
                     try:
                         cost_num = float(cost_raw)
-                        if cost_num < 0:
+                        if not math.isfinite(cost_num):
+                            issues.append(ValidationIssue(idx, "NON_FINITE_NUMERIC", "unit_cost", f"Unit cost '{cost_raw}' is non-finite (NaN/Infinity)"))
+                            row_has_issue = True
+                        elif cost_num < 0:
                             issues.append(ValidationIssue(idx, "NEGATIVE_COST", "unit_cost", f"Unit cost '{cost_raw}' cannot be negative"))
                             row_has_issue = True
                         else:
@@ -272,7 +377,7 @@ class DatasetManager:
         # Check profit availability (must have cost for 100% of valid rows)
         has_cost_data = False
         if has_cost_col and len(valid_df) > 0:
-            has_cost_data = valid_df["unit_cost"].notna().all()
+            has_cost_data = valid_df["unit_cost"].notna().all() and (valid_df["unit_cost"].dropna() != "").all()
             if has_cost_data:
                 valid_df["line_profit"] = valid_df["quantity"] * (valid_df["unit_price"] - valid_df["unit_cost"])
 
