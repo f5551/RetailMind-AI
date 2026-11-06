@@ -10,10 +10,8 @@ Verifies:
 7. Deployment configuration files validity (Procfile, railway.json, Dockerfile).
 """
 
-import asyncio
 import json
 import py_compile
-import sys
 from pathlib import Path
 import pytest
 
@@ -86,7 +84,7 @@ async def test_app_approval_workflow_generates_report(tmp_path):
     user_id = "ui_manager"
 
     sample_csv = WORKSPACE_ROOT / "sample_data" / "synthetic_sales.csv"
-    DatasetManager.register_dataset(session_id, sample_csv)
+    DatasetManager.register_dataset(session_id, sample_csv, user_id=user_id)
 
     auth_service = AuthorizationService.get_default_service()
     report_args = {
@@ -104,7 +102,7 @@ async def test_app_approval_workflow_generates_report(tmp_path):
         params=report_args,
     )
 
-    client = RetailMindMCPClient()
+    client = RetailMindMCPClient(caller_user_id=user_id)
     async with client:
         call_args = dict(report_args, auth_ticket=ticket)
         result = await client.call_tool("generate_report", call_args)
@@ -186,3 +184,21 @@ def test_deployment_configuration_files_validity():
     assert "FROM python:3.11-slim" in dock_text
     assert "streamlit" in dock_text
     assert "EXPOSE 8501" in dock_text
+
+
+def test_render_trusted_html_and_css_selectors():
+    """Verify that trusted HTML rendering and sidebar radio-hiding CSS selectors are strictly present."""
+    from src.retailmind.ui.i18n import get_layout_css
+
+    # 1. Verify CSS hides circular radio buttons in sidebar
+    css_en = get_layout_css("en")
+    assert 'label[data-testid="stRadioOption"] > div > div:first-child' in css_en
+    assert "display: none !important" in css_en
+    assert 'button[data-variant="segmented_control"]' in css_en
+
+    # 2. Verify app.py defines render_trusted_html
+    app_text = (WORKSPACE_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def render_trusted_html" in app_text
+    assert "textwrap.dedent(html_str).strip()" in app_text
+    # Verify segmented control is used for language switch
+    assert "st.segmented_control" in app_text

@@ -71,9 +71,13 @@ def extract_verified_financial_facts(tool_calls_history: List[Dict[str, Any]]) -
         if not isinstance(obs, dict):
             continue
         if tool_name == "summarize_sales":
+            pm = obs.get("profit_metrics") if isinstance(obs.get("profit_metrics"), dict) else {}
+            has_profit = bool(pm.get("available") if "available" in pm else obs.get("has_cost_data"))
+            profit_val = pm.get("net_profit") if pm.get("available") else obs.get("net_profit")
+            profit_str = f", Profit=${profit_val}" if (has_profit and profit_val not in (None, "UNAVAILABLE")) else ", Profit=UNAVAILABLE"
             facts.append(
                 f"Sales Summary: Orders={obs.get('total_orders')}, Units={obs.get('net_units')}, Revenue=${obs.get('net_revenue')}"
-                + (f", Profit=${obs.get('net_profit')}" if obs.get("has_cost_data") else ", Profit=UNAVAILABLE")
+                + profit_str
             )
         elif tool_name == "rank_products":
             rankings = obs.get("rankings", [])
@@ -214,16 +218,55 @@ class RetailMindAgent:
         """Core asynchronous agent execution loop."""
         task_id = str(uuid.uuid4())[:8]
 
-        # 1. Register CSV if provided
+        # 1. Dataset Lifecycle: Reuse existing registered dataset or register initial/replacement dataset
         dataset_fingerprint = ""
-        if csv_path:
+        tracer = ExecutionTracer(task_id=task_id, session_id=session_id)
+
+        if DatasetManager.has_dataset(session_id):
+            # Ownership check: verify caller owns this session's dataset
+            is_valid_user, user_err = DatasetManager.verify_session_access(session_id, user_id)
+            if not is_valid_user:
+                final_answer = user_err
+                tracer.log_event("error", turn_index=0, data={"error": final_answer})
+                if save_trace_path:
+                    tracer.save_jsonl(save_trace_path)
+                return AgentResult(
+                    task_id=task_id,
+                    session_id=session_id,
+                    final_answer=final_answer,
+                    stop_reason="PERMISSION_DENIED",
+                    turns_executed=0,
+                    total_cost_usd=0.0,
+                    total_tokens=0,
+                    tool_calls_count=0,
+                    execution_transport=self.execution_transport,
+                )
+
+            # If a genuinely new/different dataset file was passed for replacement
+            if csv_path:
+                active_ds = DatasetManager.get_dataset(session_id)
+                try:
+                    resolved_csv = Path(csv_path).resolve()
+                    is_same_file = (
+                        resolved_csv == Path(active_ds.snapshot_path).resolve()
+                        or str(csv_path) == str(active_ds.snapshot_path)
+                    )
+                except Exception:
+                    is_same_file = False
+
+                if not is_same_file:
+                    processed = DatasetManager.register_dataset(session_id, csv_path, user_id=user_id)
+                    dataset_fingerprint = processed.fingerprint
+                else:
+                    dataset_fingerprint = active_ds.fingerprint
+            else:
+                dataset_fingerprint = DatasetManager.get_dataset_fingerprint(session_id)
+        elif csv_path:
+            # First-time registration for this session via csv_path
             processed = DatasetManager.register_dataset(session_id, csv_path, user_id=user_id)
             dataset_fingerprint = processed.fingerprint
         else:
-            try:
-                dataset_fingerprint = DatasetManager.get_dataset_fingerprint(session_id)
-            except Exception:
-                dataset_fingerprint = ""
+            dataset_fingerprint = ""
 
         # 2. Memory Recall: Retrieve previous verified context for (user_id, dataset_fingerprint)
         memory_prompt_context = ""
@@ -235,7 +278,6 @@ class RetailMindAgent:
                 memory_prompt_context = self.memory_manager.format_memory_for_prompt(user_id, dataset_fingerprint, limit=3)
 
         cost_tracker = CostTracker(budget_cap_usd=self.budget_cap_usd)
-        tracer = ExecutionTracer(task_id=task_id, session_id=session_id)
 
         tracer.log_event(
             "task_start",
@@ -385,8 +427,7 @@ class RetailMindAgent:
                         tool_name = fc.name
                         tool_args = dict(fc.args) if fc.args else {}
 
-                        if "session_id" not in tool_args or not tool_args["session_id"]:
-                            tool_args["session_id"] = session_id
+                        tool_args["session_id"] = session_id
                         tool_args["caller_user_id"] = user_id
 
                         # Enforce executable permission layer

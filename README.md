@@ -1,10 +1,10 @@
 # RetailMind AI — Intelligent Retail Sales Analytics Agent
 
 [![Capstone Track](https://img.shields.io/badge/LLM4Yemen-Track%20B%20Week%205-blue.svg)](docs/CAPSTONE_REQUIREMENTS.md)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://www.python.org/)
 [![Status](https://img.shields.io/badge/Status-Ready%20With%20Minor%20Issues-success.svg)](docs/STATUS.md)
-[![Tests](https://img.shields.io/badge/Tests-103%20passed%20(100%25)-success.svg)](docs/STATUS.md)
+[![Tests](https://img.shields.io/badge/Tests-176%20passed%20(100%25%20pass%20rate)-success.svg)](docs/STATUS.md)
+[![Coverage](https://img.shields.io/badge/Coverage-85.3%25%20(Core)-blue.svg)](docs/STATUS.md)
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 
@@ -33,7 +33,7 @@
 | **Validation** | `pydantic` | [PyPI: pydantic](https://pypi.org/project/pydantic/) | `2.14.2` |
 | **Memory / Audit** | `sqlite3` | Standard Python Library | `3.50.4` |
 | **Dashboard UI** | `streamlit` | [PyPI: streamlit](https://pypi.org/project/streamlit/) | `1.66.1` (or >=1.35) |
-| **Test Harness** | `pytest`, `pytest-asyncio` | [PyPI: pytest](https://pypi.org/project/pytest/) | `9.2.0`, `1.4.1` |
+| **Test Harness** | `pytest`, `pytest-asyncio`, `pytest-cov` | [PyPI: pytest](https://pypi.org/project/pytest/) | `9.2.0`, `1.4.1`, `6.1.1` |
 
 ---
 
@@ -97,11 +97,12 @@ RetailMind-AI/
 │       │   └── registry.py      # Tool dispatch registry
 │       └── ui/                  # Internationalization and presentation
 │           └── i18n.py          # Centralized English/Arabic translations & RTL
-├── tests/                       # Automated test suite (98 tests across 13 modules)
-└── traces/                      # Authentic JSONL execution logs (16 real runs)
-    ├── success_1.jsonl          # Submission Item C: Successful analytical run
-    ├── near_failure_recovery.jsonl # Submission Item C: Near-failure recovery
-    └── explicit_failure.jsonl   # Submission Item C: Human denial execution
+├── tests/                       # Automated test suite (176 tests across 24 test files)
+└── traces/                      # Authentic JSONL execution logs
+    ├── success_1.jsonl          # Submission Item C: Successful analytical run (Gemini 3.1 Flash-Lite)
+    ├── near_failure_recovery.jsonl # Submission Item C: Near-failure recovery (Gemini 3.1 Flash-Lite)
+    ├── explicit_failure.jsonl   # Submission Item C: MAX_TURNS_REACHED failure (Mock LLM + Real MCP)
+    └── archive/                 # Historical safety traces (e.g. permission-gated report denial)
 ```
 
 ---
@@ -116,7 +117,7 @@ RetailMind-AI/
 ### 1. Clone the repository & create Virtual Environment
 ```powershell
 # In PowerShell / Command Prompt
-git clone <YOUR_REPO_URL>
+git clone <REPO_URL_PENDING_SUBMISSION>
 cd "RetailMind A"
 
 # Create virtual environment (inherit global packages if desired)
@@ -128,8 +129,11 @@ py -3.13 -m venv --system-site-packages .venv
 
 ### 2. Install Dependencies
 ```powershell
-# Using pip
+# Using pip for runtime and baseline testing dependencies
 pip install -r requirements.txt
+
+# (Optional) Install code coverage audit package if running coverage verification
+pip install pytest-cov
 ```
 
 ### 3. Configure Environment Variables
@@ -143,8 +147,14 @@ Copy-Item .env.example .env
 
 ### 4. Run Automated Test Suite
 ```powershell
-# Run the complete test suite across all 13 modules (98 tests passing)
+# Run the complete test suite across all 24 test files (176 tests passing, 100% pass rate)
 pytest -v tests/
+
+# Optional: Install coverage measurement dependency if not already installed
+python -m pip install pytest-cov
+
+# Run test suite with actual code coverage (measured: 85.3% core backend, 65.0% total)
+pytest --cov=src/retailmind --cov=app tests/
 
 # Run the live Gemini + MCP multi-tool demonstration
 python scripts/run_mcp_live_scenarios.py
@@ -163,6 +173,8 @@ Open your browser to `http://localhost:8501`.
 ---
 
 ## ☁️ Cloud Deployment (Railway)
+
+> **Live Deployment Status:** Pending Cloud Deployment (Railway / Render). Deployment configuration files, healthchecks, and Docker container definitions are verified locally; public deployment URL will be registered upon deployment.
 
 RetailMind AI is fully configured for deployment on [Railway](https://railway.app/) using `Procfile`, `railway.json`, or `Dockerfile`.
 

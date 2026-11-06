@@ -166,7 +166,7 @@ async def test_approval_workflow_under_arabic_session(tmp_path):
     user_id = "ar_user"
 
     sample_csv = WORKSPACE_ROOT / "sample_data" / "synthetic_sales.csv"
-    DatasetManager.register_dataset(session_id, sample_csv)
+    DatasetManager.register_dataset(session_id, sample_csv, user_id=user_id)
 
     auth_service = AuthorizationService.get_default_service()
     report_args = {
@@ -186,7 +186,7 @@ async def test_approval_workflow_under_arabic_session(tmp_path):
     assert ticket.startswith("cap_")
 
     # Execute approved report via MCP client
-    client = RetailMindMCPClient()
+    client = RetailMindMCPClient(caller_user_id=user_id)
     async with client:
         call_args = dict(report_args, auth_ticket=ticket)
         res = await client.call_tool("generate_report", call_args)

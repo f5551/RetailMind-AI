@@ -41,11 +41,29 @@ class Settings:
 
     # Paths
     workspace_root: Path = WORKSPACE_ROOT
-    data_dir: Path = Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data"))
-    reports_dir: Path = Path(os.getenv("RETAILMIND_REPORTS_DIR", Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data")) / "reports")) if os.getenv("RETAILMIND_DATA_DIR") else (WORKSPACE_ROOT / "reports")
     traces_dir: Path = WORKSPACE_ROOT / "traces"
     sample_data_dir: Path = WORKSPACE_ROOT / "sample_data"
-    sqlite_db_path: Path = Path(os.getenv("RETAILMIND_DATA_DIR", WORKSPACE_ROOT / "data")) / os.getenv("SQLITE_DB_NAME", "retailmind.db")
+
+    @property
+    def data_dir(self) -> Path:
+        custom = os.getenv("RETAILMIND_DATA_DIR")
+        return Path(custom).resolve() if custom else (self.workspace_root / "data").resolve()
+
+    @property
+    def reports_dir(self) -> Path:
+        custom_reports = os.getenv("RETAILMIND_REPORTS_DIR")
+        if custom_reports:
+            return Path(custom_reports).resolve()
+        custom_data = os.getenv("RETAILMIND_DATA_DIR")
+        if custom_data:
+            return (Path(custom_data) / "reports").resolve()
+        return (self.workspace_root / "reports").resolve()
+
+    @property
+    def sqlite_db_path(self) -> Path:
+        custom = os.getenv("RETAILMIND_DATA_DIR")
+        base = Path(custom).resolve() if custom else (self.workspace_root / "data").resolve()
+        return base / os.getenv("SQLITE_DB_NAME", "retailmind.db")
 
 
 settings = Settings()

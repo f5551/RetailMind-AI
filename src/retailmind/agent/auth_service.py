@@ -154,12 +154,12 @@ class AuthorizationService:
                 if row["tool_name"] != tool_name:
                     return False, "TOOL_NAME_MISMATCH"
 
-                # Check session binding if provided
-                if session_id and row["session_id"] != session_id:
+                # Check session binding (fail-closed: session_id must match ticket's session_id)
+                if not session_id or row["session_id"] != session_id:
                     return False, "SESSION_ID_MISMATCH"
 
-                # Check user binding if provided
-                if user_id and row["user_id"] != user_id:
+                # Check user binding (fail-closed: user_id must match ticket's user_id)
+                if not user_id or row["user_id"] != user_id:
                     return False, "USER_ID_MISMATCH"
 
                 if row["params_hash"] != params_hash:

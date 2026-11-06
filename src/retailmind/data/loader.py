@@ -59,6 +59,8 @@ class ProcessedDataset:
     date_range: Tuple[Optional[str], Optional[str]] = (None, None)
     fingerprint: str = ""
     snapshot_path: Optional[str] = None
+    is_synthetic: bool = False
+    dataset_type: str = "approved_synthetic"
 
 
 def sanitize_cell_value(val: Any) -> Any:
@@ -82,6 +84,39 @@ def sanitize_cell_value(val: Any) -> Any:
 APPROVED_BUNDLED_SYNTHETIC_DIR = (Path(__file__).resolve().parent.parent.parent.parent / "sample_data").resolve()
 
 
+def is_local_interface_bound() -> bool:
+    """Checks whether the running server interface is strictly bound to local loopback (127.0.0.1 / localhost / ::1).
+
+    Fails closed if bound to 0.0.0.0, a public IP, or if unbound in a non-test environment.
+    """
+    addr = os.getenv("RETAILMIND_SERVER_ADDRESS") or os.getenv("STREAMLIT_SERVER_ADDRESS")
+    if not addr:
+        try:
+            from streamlit import config
+
+            addr = config.get_option("server.address")
+        except Exception:
+            addr = None
+
+    if not addr:
+        try:
+            import streamlit as st
+
+            addr = st.config.get_option("server.address")
+        except Exception:
+            addr = None
+
+    if not addr:
+        # In automated pytest environment with no address set, default to 127.0.0.1
+        if "pytest" in sys.modules or os.getenv("RETAILMIND_ENV") in ("test", "testing"):
+            addr = "127.0.0.1"
+        else:
+            return False
+
+    cleaned = str(addr).strip().lower()
+    return cleaned in ("127.0.0.1", "localhost", "::1")
+
+
 def verify_approved_synthetic_dataset(
     csv_path_or_df: Any,
     raw_df: pd.DataFrame,
@@ -100,10 +135,22 @@ def verify_approved_synthetic_dataset(
         # If force_test_mode is explicitly False, enforce strict check even in tests
 
     # Strict server-validated authentication:
-    # A generic environment flag such as RETAILMIND_AUTH_MODE=production MUST NOT enable unrestricted uploads.
+    # A generic environment flag such as RETAILMIND_AUTH_MODE=production or RETAILMIND_LOCAL_TESTING=1 MUST NOT enable unrestricted uploads.
     # Requires a real server-validated authentication secret/token to enable custom business uploads.
     verified_server_token = os.getenv("RETAILMIND_SERVER_AUTH_SECRET") or os.getenv("RETAILMIND_AUTH_SECRET")
+    local_dev_secret = os.getenv("RETAILMIND_LOCAL_DEV_SECRET")
     candidate_token = auth_token or os.getenv("RETAILMIND_AUTH_TOKEN")
+
+    # 1. Local Developer Testing Mode Authorization (Requires matching secret AND 127.0.0.1 loopback binding)
+    if local_dev_secret and candidate_token and candidate_token == local_dev_secret:
+        if not is_local_interface_bound():
+            return False, (
+                "LOCAL_TESTING_REJECTED_PUBLIC_BINDING: Local testing mode is strictly restricted to "
+                "127.0.0.1 loopback interface. Server appears bound to a public interface or server.address is not loopback."
+            )
+        return True, ""
+
+    # 2. Strict Organizational Server Authentication
     is_authenticated = bool(
         verified_server_token and candidate_token and candidate_token == verified_server_token
     )
@@ -134,7 +181,7 @@ def verify_approved_synthetic_dataset(
         "UNAUTHENTICATED_DEMO_RESTRICTION: Arbitrary custom CSV uploads are disabled in unauthenticated public demo mode. "
         "A column-name filter cannot prove data is synthetic. To guarantee data confidentiality, only bundled approved "
         "synthetic datasets (e.g., sample_data/synthetic_sales.csv) may be loaded. "
-        "Authenticate with an authorized organizational account to upload custom business datasets."
+        "Authenticate with an authorized organizational account or authorize local developer testing on 127.0.0.1 to upload custom business datasets."
     )
 
 
@@ -143,6 +190,23 @@ class DatasetManager:
 
     _sessions: Dict[str, ProcessedDataset] = {}
     _approved_synthetic_fps: Optional[set] = None
+
+    @classmethod
+    def get_data_dir(cls) -> Path:
+        """Returns the active data directory, respecting RETAILMIND_DATA_DIR dynamically."""
+        return Path(os.getenv("RETAILMIND_DATA_DIR", Path(__file__).resolve().parent.parent.parent.parent / "data"))
+
+    @classmethod
+    def get_registry_file(cls) -> Path:
+        """Returns the active session registry JSON file path."""
+        return cls.get_data_dir() / "session_registry.json"
+
+    @classmethod
+    def get_snapshots_dir(cls) -> Path:
+        """Returns the active session snapshots directory."""
+        return cls.get_data_dir() / "snapshots"
+
+    # Retain class attributes for backward compatibility
     DATA_DIR = Path(os.getenv("RETAILMIND_DATA_DIR", Path(__file__).resolve().parent.parent.parent.parent / "data"))
     REGISTRY_FILE = DATA_DIR / "session_registry.json"
     SNAPSHOTS_DIR = DATA_DIR / "snapshots"
@@ -171,30 +235,42 @@ class DatasetManager:
         os.replace(temp_path, target_path)
 
     @classmethod
-    def _save_registry_entry(cls, session_id: str, file_path: str, fingerprint: str, user_id: str = "default_user") -> None:
+    def _save_registry_entry(
+        cls,
+        session_id: str,
+        file_path: str,
+        fingerprint: str,
+        user_id: str = "default_user",
+        is_synthetic: bool = False,
+        dataset_type: str = "approved_synthetic",
+    ) -> None:
         try:
-            cls.REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            reg_file = cls.get_registry_file()
+            reg_file.parent.mkdir(parents=True, exist_ok=True)
             registry = {}
-            if cls.REGISTRY_FILE.exists():
+            if reg_file.exists():
                 try:
-                    registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                    registry = json.loads(reg_file.read_text(encoding="utf-8"))
                 except Exception:
                     registry = {}
             registry[session_id] = {
                 "path": file_path,
                 "fingerprint": fingerprint,
                 "user_id": user_id,
+                "is_synthetic": is_synthetic,
+                "dataset_type": dataset_type,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
-            cls._atomic_write_file(cls.REGISTRY_FILE, json.dumps(registry, indent=2))
+            cls._atomic_write_file(reg_file, json.dumps(registry, indent=2))
         except Exception:
             pass
 
     @classmethod
     def _load_registry_entry(cls, session_id: str) -> Optional[Dict[str, Any]]:
-        if cls.REGISTRY_FILE.exists():
+        reg_file = cls.get_registry_file()
+        if reg_file.exists():
             try:
-                registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                registry = json.loads(reg_file.read_text(encoding="utf-8"))
                 return registry.get(session_id)
             except Exception:
                 return None
@@ -215,6 +291,7 @@ class DatasetManager:
         csv_path_or_df: Any,
         user_id: Optional[str] = None,
         auth_token: Optional[str] = None,
+        force_test_mode: Optional[bool] = None,
     ) -> ProcessedDataset:
         """Loads, cleans, validates, and registers a dataset for a session.
 
@@ -255,7 +332,9 @@ class DatasetManager:
             raise RowLimitExceededError(len(raw_df), limit=50000)
 
         # Enforce approved synthetic dataset restriction in unauthenticated public demo mode
-        is_compliant, reason = verify_approved_synthetic_dataset(csv_path_or_df, raw_df, auth_token=auth_token)
+        is_compliant, reason = verify_approved_synthetic_dataset(
+            csv_path_or_df, raw_df, force_test_mode=force_test_mode, auth_token=auth_token
+        )
         if not is_compliant:
             logger.error("Dataset registration rejected: %s", reason)
             raise ValueError(reason)
@@ -265,11 +344,22 @@ class DatasetManager:
         processed.fingerprint = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
 
         # Atomic persistence of session snapshot for cross-process MCP synchronization
-        cls.SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
-        snapshot_file = cls.SNAPSHOTS_DIR / f"snapshot_{clean_session}.csv"
+        snapshots_dir = cls.get_snapshots_dir()
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_file = snapshots_dir / f"snapshot_{clean_session}.csv"
         cls._atomic_write_file(snapshot_file, csv_text)
 
         processed.snapshot_path = str(snapshot_file.resolve())
+
+        # Classify dataset type and synthetic status
+        known_fps = cls.get_approved_synthetic_fingerprints()
+        if processed.fingerprint in known_fps:
+            processed.is_synthetic = True
+            processed.dataset_type = "approved_synthetic"
+        else:
+            processed.is_synthetic = False
+            processed.dataset_type = "custom_local"
+
         cls._sessions[session_id] = processed
 
         cls._save_registry_entry(
@@ -277,6 +367,8 @@ class DatasetManager:
             file_path=str(snapshot_file.resolve()),
             fingerprint=processed.fingerprint,
             user_id=effective_user,
+            is_synthetic=processed.is_synthetic,
+            dataset_type=processed.dataset_type,
         )
 
         return processed
@@ -302,6 +394,15 @@ class DatasetManager:
                 processed = cls._process_raw_dataframe(raw_df)
                 processed.fingerprint = reg_fp
                 processed.snapshot_path = str(reg_path.resolve())
+
+                known_fps = cls.get_approved_synthetic_fingerprints()
+                if processed.fingerprint in known_fps:
+                    processed.is_synthetic = True
+                    processed.dataset_type = "approved_synthetic"
+                else:
+                    processed.is_synthetic = False
+                    processed.dataset_type = "custom_local"
+
                 cls._sessions[session_id] = processed
                 return processed
 
@@ -317,6 +418,29 @@ class DatasetManager:
         return dataset.fingerprint
 
     @classmethod
+    def has_dataset(cls, session_id: str) -> bool:
+        """Returns True if a registered dataset exists for session_id in memory or registry."""
+        if not session_id or not isinstance(session_id, str):
+            return False
+        if session_id in cls._sessions:
+            return True
+        entry = cls._load_registry_entry(session_id)
+        if entry:
+            reg_path = Path(entry.get("path", ""))
+            return reg_path.exists()
+        return False
+
+    @classmethod
+    def verify_session_access(cls, session_id: str, caller_user_id: str) -> Tuple[bool, str]:
+        """Validates that caller_user_id has permission to access session_id's dataset."""
+        if not cls.has_dataset(session_id):
+            return False, f"DATASET_NOT_FOUND: No registered dataset found for session '{session_id}'."
+        owner = cls.get_session_owner(session_id)
+        if owner and caller_user_id and owner != caller_user_id:
+            return False, f"PERMISSION_DENIED: User '{caller_user_id}' is not authorized to access session '{session_id}' owned by '{owner}'."
+        return True, ""
+
+    @classmethod
     def clear_session(cls, session_id: str) -> None:
         """Removes a session dataset from memory, registry, and cleans up its snapshot file."""
         cls._sessions.pop(session_id, None)
@@ -328,12 +452,13 @@ class DatasetManager:
                     snapshot_path.unlink()
                 except Exception:
                     pass
-        if cls.REGISTRY_FILE.exists():
+        reg_file = cls.get_registry_file()
+        if reg_file.exists():
             try:
-                registry = json.loads(cls.REGISTRY_FILE.read_text(encoding="utf-8"))
+                registry = json.loads(reg_file.read_text(encoding="utf-8"))
                 if session_id in registry:
                     del registry[session_id]
-                    cls._atomic_write_file(cls.REGISTRY_FILE, json.dumps(registry, indent=2))
+                    cls._atomic_write_file(reg_file, json.dumps(registry, indent=2))
             except Exception:
                 pass
 
@@ -474,7 +599,7 @@ class DatasetManager:
         # Check profit availability (must have cost for 100% of valid rows)
         has_cost_data = False
         if has_cost_col and len(valid_df) > 0:
-            has_cost_data = valid_df["unit_cost"].notna().all() and (valid_df["unit_cost"].dropna() != "").all()
+            has_cost_data = bool(valid_df["unit_cost"].notna().all() and (valid_df["unit_cost"].dropna() != "").all())
             if has_cost_data:
                 valid_df["line_profit"] = valid_df["quantity"] * (valid_df["unit_price"] - valid_df["unit_cost"])
 

@@ -460,13 +460,14 @@ def generate_report(args: GenerateReportInput, is_approved: bool = False) -> Dic
         }
 
     # Human authorization verified: execute report persistence
-    settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    target_reports_dir = settings.reports_dir.resolve()
+    target_reports_dir.mkdir(parents=True, exist_ok=True)
     timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_title = "".join(c for c in args.title if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_").lower()
 
     if args.format == "csv":
         filename = f"{safe_title}_{timestamp_str}.csv"
-        report_path = settings.reports_dir / filename
+        report_path = (target_reports_dir / filename).resolve()
 
         output_rows: List[List[str]] = [
             ["Report Title", sanitize_cell_value(args.title)],
@@ -487,6 +488,19 @@ def generate_report(args: GenerateReportInput, is_approved: bool = False) -> Dic
                     output_rows.append(row_vals)
             output_rows.append([])
 
+        # Containment check before writing
+        try:
+            is_safe_location = report_path.is_relative_to(target_reports_dir) or str(report_path).startswith(str(target_reports_dir))
+        except Exception:
+            is_safe_location = False
+
+        if not is_safe_location:
+            return {
+                "status": "error",
+                "error_code": "UNAUTHORIZED_OUTPUT_PATH",
+                "message": f"Export rejected: report path '{report_path}' is outside approved reports directory '{target_reports_dir}'.",
+            }
+
         with open(report_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerows(output_rows)
@@ -496,7 +510,20 @@ def generate_report(args: GenerateReportInput, is_approved: bool = False) -> Dic
     else:
         # Markdown format
         filename = f"{safe_title}_{timestamp_str}.md"
-        report_path = settings.reports_dir / filename
+        report_path = (target_reports_dir / filename).resolve()
+
+        # Containment check before writing
+        try:
+            is_safe_location = report_path.is_relative_to(target_reports_dir) or str(report_path).startswith(str(target_reports_dir))
+        except Exception:
+            is_safe_location = False
+
+        if not is_safe_location:
+            return {
+                "status": "error",
+                "error_code": "UNAUTHORIZED_OUTPUT_PATH",
+                "message": f"Export rejected: report path '{report_path}' is outside approved reports directory '{target_reports_dir}'.",
+            }
 
         content_lines = [
             f"# {args.title}",
@@ -522,9 +549,14 @@ def generate_report(args: GenerateReportInput, is_approved: bool = False) -> Dic
         report_path.write_text(full_text, encoding="utf-8")
         file_bytes = len(full_text.encode("utf-8"))
 
+    try:
+        output_file_path = str(report_path.relative_to(settings.workspace_root.resolve()))
+    except ValueError:
+        output_file_path = str(report_path)
+
     return GenerateReportOutput(
         status="success",
-        file_path=str(report_path.relative_to(settings.workspace_root)),
+        file_path=output_file_path,
         file_size_bytes=file_bytes,
         format=args.format,
         created_at=datetime.now(timezone.utc).isoformat(),

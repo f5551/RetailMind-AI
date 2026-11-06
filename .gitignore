@@ -46,6 +46,7 @@ ENV*/
 *.sqlite3
 data/*
 !data/.gitkeep
+data/local_testing/
 
 # Confidential / User-Uploaded Data
 uploads/

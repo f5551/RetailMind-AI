@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-11-04 06:02:23",
+  "onboarding": {
+    "present": true
+  },
+  "kpis": {
+    "context_banner_present": true,
+    "card_count": 5,
+    "cards": [
+      {
+        "index": 0,
+        "title": "NET REVENUE",
+        "value": "$2,945.00"
+      },
+      {
+        "index": 1,
+        "title": "UNITS SOLD",
+        "value": "87"
+      },
+      {
+        "index": 2,
+        "title": "TOTAL ORDERS",
+        "value": "15"
+      },
+      {
+        "index": 3,
+        "title": "GROSS PROFIT",
+        "value": "$1,525.50"
+      },
+      {
+        "index": 4,
+        "title": "GROSS MARGIN",
+        "value": "51.8%"
+      }
+    ]
+  },
+  "charts": {
+    "count": 4
+  },
+  "views_en": {},
+  "views_ar": {},
+  "language_toggle": {},
+  "viewports": {
+    "desktop_1440x900": {
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "card_width": 183.1875,
+      "hasOverflow": false
+    },
+    "laptop_1366x768": {
+      "width": 1366,
+      "height": 768,
+      "clientWidth": 1366,
+      "scrollWidth": 1366,
+      "card_width": 168.390625,
+      "hasOverflow": false
+    },
+    "ipad_landscape_1024x768": {
+      "width": 1024,
+      "height": 768,
+      "clientWidth": 1024,
+      "scrollWidth": 1024,
+      "card_width": 177.328125,
+      "hasOverflow": false
+    },
+    "tablet_portrait_768x1024": {
+      "width": 768,
+      "height": 1024,
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "card_width": 212,
+      "hasOverflow": false
+    },
+    "mobile_390x844": {
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "card_width": 358,
+      "hasOverflow": false
+    },
+    "small_mobile_360x800": {
+      "width": 360,
+      "height": 800,
+      "clientWidth": 360,
+      "scrollWidth": 360,
+      "card_width": 328,
+      "hasOverflow": false
+    }
+  },
+  "errors_and_logs": {
+    "console_errors": [
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Infinite extent for field \"line_revenue\": [Infinity, -Infinity]",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Infinite extent for field \"line_revenue\": [Infinity, -Infinity]",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Infinite extent for field \"line_revenue\": [Infinity, -Infinity]",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains.",
+      "[warning] WARN Scale bindings are currently only supported for scales with unbinned, continuous domains."
+    ],
+    "page_errors": []
+  }
+}
