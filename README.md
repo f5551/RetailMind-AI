@@ -8,9 +8,18 @@
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 
-> 🌐 **Live Demo:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)  
-> 📦 **GitHub Repository:** [https://github.com/f5551/RetailMind-AI](https://github.com/f5551/RetailMind-AI)  
-> ⚙️ **Cloud Stack:** Deployed as a Docker container on Render running a bilingual Streamlit SaaS interface, powered by Google Gemini single-agent reasoning, official Model Context Protocol (MCP) tool routing, and SQLite memory.
+---
+
+## 🌐 Live Demo
+
+- **Live Application URL:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)
+- **GitHub Repository:** [https://github.com/f5551/RetailMind-AI](https://github.com/f5551/RetailMind-AI)
+- **Deployment Platform:** Render (Docker container running bilingual Streamlit SaaS interface, Google Gemini 3.1 Flash-Lite, and Model Context Protocol).
+
+> ⚠️ **Cloud Deployment Notices:**
+> - **CSV Upload:** Currently being fixed on the Render cloud deployment.
+> - **Ephemeral Storage:** The live demo is hosted on the Render Free tier, which uses ephemeral storage; uploaded datasets and session data do not persist across container spin-downs or idle restarts.
+> - **Testing Scope:** Core reasoning, MCP tools, security defenses, and SQLite memory persistence are proven and verified locally via the automated test suite. Cloud deployment features are partially tested and not all cloud features are fully tested.
 
 ---
 
@@ -180,7 +189,8 @@ Open your browser to `http://localhost:8501`.
 
 > **Live Demo Available:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)  
 > **Deployment Architecture:** Multi-stage production `Dockerfile` running on Render Web Service, exposing the bilingual Streamlit SaaS dashboard connected to the Gemini agent and standard MCP tools.  
-> **Persistence Notice:** Render Free tier operates on an ephemeral filesystem. While production persistent disk volume attachment is defined for `/app/data` (`RETAILMIND_DATA_DIR`), the Render free tier does not guarantee persistence across container idle sleep cycles or restarts. Persistent episodic memory and restart recovery are fully tested and proven in the local automated test suite.
+> **Persistence Notice:** Render Free tier operates on ephemeral storage. While production persistent disk volume attachment is defined for `/app/data` (`RETAILMIND_DATA_DIR`), the Render free tier does not guarantee persistence across container idle sleep cycles or restarts.  
+> **Operational Status:** CSV upload on Render is currently being fixed. Core agent features are verified locally via automated tests, while cloud deployment features are partially tested.
 
 RetailMind AI is fully configured for cloud deployment on [Render](https://render.com/) and [Railway](https://railway.app/) using `Dockerfile`, `Procfile`, or `railway.json`.
 
