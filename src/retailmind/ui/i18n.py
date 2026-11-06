@@ -921,6 +921,14 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "en": "Local Testing Mode Authorized: Custom CSV uploads enabled (Max 10 MB, 50,000 rows)",
         "ar": "وضع الاختبار المحلي مفوّض: يمكنك رفع ملفات CSV المخصصة (الحد الأقصى: 10 ميجابايت، 50,000 صف)",
     },
+    "auth_notice_prod_mode_title": {
+        "en": "Production Cloud Environment Active",
+        "ar": "بيئة الإنتاج السحابية مفعلة",
+    },
+    "auth_notice_prod_mode_desc": {
+        "en": "Secure CSV sales upload is active. Data is processed in private session isolation with 50,000 row limits and formula injection sanitization.",
+        "ar": "رفع ملفات مبيعات CSV مفعّل بأمان. تتم معالجة البيانات ضمن جلسة خاصة ومعزولة مع تطبيق حدود الأمان (50,000 سطر كحد أقصى وتعقيم صيغ CSV).",
+    },
     "auth_notice_demo_mode_title": {
         "en": "Approved Demo Mode (Restricted Custom Uploads)",
         "ar": "وضع العرض التجريبي المعتمد (تقييد الملفات المخصصة)",

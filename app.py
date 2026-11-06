@@ -44,6 +44,7 @@ from src.retailmind.data.loader import (
     ProcessedDataset,
     RowLimitExceededError,
     is_local_interface_bound,
+    is_production_mode,
 )
 from src.retailmind.mcp.client import RetailMindMCPClient
 from src.retailmind.memory.manager import SQLiteMemoryManager
@@ -776,7 +777,7 @@ def load_dataset_from_bytes(file_bytes: bytes, filename: str, auth_token: Option
         df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8")
     except UnicodeDecodeError:
         df = pd.read_csv(io.BytesIO(file_bytes), encoding="latin-1")
-    effective_token = auth_token or st.session_state.get("local_dev_token") or os.getenv("RETAILMIND_AUTH_TOKEN")
+    effective_token = auth_token or st.session_state.get("local_dev_token")
     processed = DatasetManager.register_dataset(
         st.session_state.session_id, df, user_id=st.session_state.user_id, auth_token=effective_token
     )
@@ -1898,6 +1899,7 @@ elif active_view == "dataset":
     uploader_expanded = not st.session_state.dataset_loaded or st.session_state.get("uploader_has_error", False)
     with st.expander(f"📁 {t('uploader_label', lang)}", expanded=uploader_expanded):
         is_dev_authorized = check_developer_authorization()
+        in_production = is_production_mode()
 
         # Clear permissions notice before choosing file
         if is_dev_authorized:
@@ -1916,6 +1918,20 @@ elif active_view == "dataset":
                 if st.button(t("dev_mode_btn_revoke", lang), key="btn_revoke_dev_uploader", use_container_width=True):
                     st.session_state.local_dev_token = None
                     st.rerun()
+        elif in_production:
+            render_trusted_html(
+                f"""
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px; color: #166534; font-size: 0.85rem; font-weight: 700; margin-bottom: 4px;">
+                        {get_svg_icon('shield_check', size=16, color='#16a34a')}
+                        <span>{t('auth_notice_prod_mode_title', lang)}</span>
+                    </div>
+                    <div style="color: #15803d; font-size: 0.78rem; line-height: 1.4;">
+                        {t('auth_notice_prod_mode_desc', lang)}
+                    </div>
+                </div>
+                """
+            )
         else:
             render_trusted_html(
                 f"""

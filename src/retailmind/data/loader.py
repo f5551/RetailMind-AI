@@ -117,6 +117,16 @@ def is_local_interface_bound() -> bool:
     return cleaned in ("127.0.0.1", "localhost", "::1")
 
 
+def is_production_mode() -> bool:
+    """Returns True if the application is running in a deployed production cloud environment (e.g., Render, Railway, or ENVIRONMENT=production)."""
+    env = os.getenv("ENVIRONMENT", "").strip().lower()
+    rm_env = os.getenv("RETAILMIND_ENV", "").strip().lower()
+    rm_mode = os.getenv("RETAILMIND_MODE", "").strip().lower()
+    is_render = os.getenv("RENDER", "").strip().lower() in ("true", "1")
+    is_railway = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+    return env == "production" or rm_env == "production" or rm_mode == "production" or is_render or is_railway
+
+
 def verify_approved_synthetic_dataset(
     csv_path_or_df: Any,
     raw_df: pd.DataFrame,
@@ -155,6 +165,13 @@ def verify_approved_synthetic_dataset(
         verified_server_token and candidate_token and candidate_token == verified_server_token
     )
     if is_authenticated:
+        return True, ""
+
+    # 3. Production Cloud Deployment: Allow user CSV uploads in verified production environments
+    # while continuing to enforce 50k rows, 10MB, schema, sanitization, and session isolation.
+    # Note: force_test_mode is None ensures existing test suites passing force_test_mode=False
+    # continue to test unauthenticated demo mode behavior without interference.
+    if force_test_mode is None and is_production_mode():
         return True, ""
 
     # Allow automated test suites unless strict test is requested
