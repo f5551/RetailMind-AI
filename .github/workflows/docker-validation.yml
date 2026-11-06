@@ -1,0 +1,113 @@
+name: Docker Release Validation
+
+on:
+  push:
+    branches:
+      - test/docker-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-docker:
+    name: Build & Validate Non-Root Docker Container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          echo "Building Docker image from Dockerfile..."
+          docker build -t retailmind-test:latest .
+
+      - name: Verify Non-Root User & Fixed UID/GID
+        run: |
+          echo "Checking container user..."
+          CONTAINER_USER=$(docker run --rm retailmind-test:latest whoami)
+          CONTAINER_UID=$(docker run --rm retailmind-test:latest id -u)
+          CONTAINER_GID=$(docker run --rm retailmind-test:latest id -g)
+          
+          echo "Container User: $CONTAINER_USER"
+          echo "Container UID:  $CONTAINER_UID"
+          echo "Container GID:  $CONTAINER_GID"
+          
+          if [ "$CONTAINER_UID" != "10001" ]; then
+            echo "ERROR: Expected UID 10001, got $CONTAINER_UID"
+            exit 1
+          fi
+          if [ "$CONTAINER_USER" != "appuser" ]; then
+            echo "ERROR: Expected user appuser, got $CONTAINER_USER"
+            exit 1
+          fi
+          echo "SUCCESS: Non-root user appuser (UID: 10001, GID: 10001) verified."
+
+      - name: Test Write Permissions (SQLite, Data, Reports, Traces)
+        run: |
+          echo "Testing in-container non-root write permissions..."
+          docker run --rm retailmind-test:latest python3 -c '
+          import sqlite3, os
+          
+          # 1. Test SQLite database creation & WAL writing in /app/data
+          db_path = "/app/data/test_retailmind.db"
+          conn = sqlite3.connect(db_path)
+          conn.execute("PRAGMA journal_mode=WAL")
+          conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, note TEXT)")
+          conn.execute("INSERT INTO test_table (note) VALUES (\"wal_persistence_ok\")")
+          conn.commit()
+          row = conn.execute("SELECT note FROM test_table").fetchone()
+          assert row[0] == "wal_persistence_ok", "SQLite select mismatch"
+          conn.close()
+          assert os.path.exists(db_path), "SQLite DB file missing"
+          print("[PASS] SQLite database creation and write verified in /app/data")
+          
+          # 2. Test Report generation writing in /app/reports
+          report_path = "/app/reports/test_report.md"
+          with open(report_path, "w", encoding="utf-8") as f:
+              f.write("# Automated Non-Root Docker Report\nStatus: PASS\n")
+          assert os.path.exists(report_path), "Report file missing"
+          print("[PASS] Markdown report write verified in /app/reports")
+          
+          # 3. Test Trace JSONL logging in /app/traces
+          trace_path = "/app/traces/test_trace.jsonl"
+          with open(trace_path, "w", encoding="utf-8") as f:
+              f.write("{\"event\": \"validation\", \"uid\": 10001}\n")
+          assert os.path.exists(trace_path), "Trace file missing"
+          print("[PASS] JSONL trace write verified in /app/traces")
+          
+          print("ALL DIRECTORY WRITE TESTS PASSED SUCCESSFULLY.")
+          '
+
+      - name: Test Streamlit Healthcheck & Startup
+        run: |
+          echo "Starting container in background..."
+          CID=$(docker run -d -p 8501:8501 retailmind-test:latest)
+          
+          echo "Container ID: $CID"
+          
+          echo "Waiting for Streamlit server to report healthy..."
+          HEALTHY=false
+          for i in {1..20}; do
+            HEALTH_RESP=$(curl -s http://localhost:8501/_stcore/health || true)
+            echo "Attempt $i: health status = '$HEALTH_RESP'"
+            if [ "$HEALTH_RESP" = "ok" ]; then
+              HEALTHY=true
+              break
+            fi
+            sleep 2
+          done
+          
+          echo "Inspecting container logs..."
+          docker logs "$CID" --tail 30
+          
+          docker stop "$CID"
+          
+          if [ "$HEALTHY" != "true" ]; then
+            echo "ERROR: Streamlit healthcheck failed to respond with 'ok'"
+            exit 1
+          fi
+          
+          echo "SUCCESS: Streamlit server started and responded 'ok' to healthcheck."
