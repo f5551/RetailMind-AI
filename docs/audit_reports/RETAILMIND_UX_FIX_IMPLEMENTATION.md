@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-Following the comprehensive merchant-perspective UX audit (`docs/RETAILMIND_END_USER_PRODUCT_AUDIT.md`) and the subsequent engineering review (`docs/RETAILMIND_PRODUCT_AUDIT_REVIEW.md`), all **20 approved remediation items** across **Stage 1 (Critical P0/P1 Fixes)** and **Stage 2 (Interface Simplification P2/P3)** have been implemented, tested, and validated in executable code.
+Following the comprehensive merchant-perspective UX audit (`docs/audit_reports/RETAILMIND_END_USER_PRODUCT_AUDIT.md`) and the subsequent engineering review (`docs/audit_reports/RETAILMIND_PRODUCT_AUDIT_REVIEW.md`), all **20 approved remediation items** across **Stage 1 (Critical P0/P1 Fixes)** and **Stage 2 (Interface Simplification P2/P3)** have been implemented, tested, and validated in executable code.
 
 Finding **DASH-04** was explicitly excluded and preserved as requested, and **DASH-03** was strictly maintained in Dollar USD (`$`) without speculative currency conversion.
 

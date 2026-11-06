@@ -1,7 +1,7 @@
 # RetailMind AI — Product Audit Validation & Decision Review
 
 **Reviewer Role:** Principal Product Architect, Senior UX Auditor & Software QA Lead  
-**Scope of Review:** Critical Engineering Validation of `docs/RETAILMIND_END_USER_PRODUCT_AUDIT.md`  
+**Scope of Review:** Critical Engineering Validation of `docs/audit_reports/RETAILMIND_END_USER_PRODUCT_AUDIT.md`  
 **Evaluation Mode:** STRICT READ-ONLY — Zero code, CSS, or configuration changes executed. Zero paid API calls.  
 **Repository State:** Streamlit 1.66.1 | Python 3.13.7 | MCP SDK 2.3.0 | SQLite WAL | Windows 64-bit  
 
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-This engineering review validates, challenges, and refines the 23 findings documented in the End-User Product Audit report (`docs/RETAILMIND_END_USER_PRODUCT_AUDIT.md`). Every finding was independently tested against the actual codebase (`app.py`, `src/retailmind/ui/i18n.py`, `src/retailmind/data/loader.py`, etc.) and verified in a live Playwright browser session.
+This engineering review validates, challenges, and refines the 23 findings documented in the End-User Product Audit report (`docs/audit_reports/RETAILMIND_END_USER_PRODUCT_AUDIT.md`). Every finding was independently tested against the actual codebase (`app.py`, `src/retailmind/ui/i18n.py`, `src/retailmind/data/loader.py`, etc.) and verified in a live Playwright browser session.
 
 ### Overarching Assessment
 The previous audit correctly diagnosed the primary friction in RetailMind AI: **an abundance of academic and architectural implementation details exposed directly to commercial end users**. 

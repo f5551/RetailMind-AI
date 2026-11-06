@@ -17,7 +17,7 @@
 - **Deployment Platform:** Render (Docker container running bilingual Streamlit SaaS interface, Google Gemini 3.1 Flash-Lite, and Model Context Protocol).
 
 > ⚠️ **Cloud Deployment Notices:**
-> - **CSV Upload:** Currently being fixed on the Render cloud deployment.
+> - **CSV Upload:** Successfully operational on the live Render deployment (verified by end-user testing with real CSV data).
 > - **Ephemeral Storage:** The live demo is hosted on the Render Free tier, which uses ephemeral storage; uploaded datasets and session data do not persist across container spin-downs or idle restarts.
 > - **Testing Scope:** Core reasoning, MCP tools, security defenses, and SQLite memory persistence are proven and verified locally via the automated test suite. Cloud deployment features are partially tested and not all cloud features are fully tested.
 
@@ -71,7 +71,7 @@ RetailMind-AI/
 ├── docs/                        # Complete governance, architecture, and audit documentation
 │   ├── CAPSTONE_REQUIREMENTS.md # Original immutable capstone contract
 │   ├── CAPSTONE_COMPLETION_REPORT.md # Comprehensive final audit report
-│   ├── REMAINING_WORK_CHECKLIST.md   # Actionable pre-submission priority checklist
+│   ├── audit_reports/           # Historical audit reports, UX reviews & legacy prompts
 │   ├── IMPLEMENTATION_PLAN.md   # Phased execution plan & acceptance gates
 │   ├── EVIDENCE_MATRIX.md       # Traceability matrix for all requirements
 │   ├── STATUS.md                # Real-time verified progress & journal
@@ -190,7 +190,7 @@ Open your browser to `http://localhost:8501`.
 > **Live Demo Available:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)  
 > **Deployment Architecture:** Multi-stage production `Dockerfile` running on Render Web Service, exposing the bilingual Streamlit SaaS dashboard connected to the Gemini agent and standard MCP tools.  
 > **Persistence Notice:** Render Free tier operates on ephemeral storage. While production persistent disk volume attachment is defined for `/app/data` (`RETAILMIND_DATA_DIR`), the Render free tier does not guarantee persistence across container idle sleep cycles or restarts.  
-> **Operational Status:** CSV upload on Render is currently being fixed. Core agent features are verified locally via automated tests, while cloud deployment features are partially tested.
+> **Operational Status:** CSV dataset upload has been verified operational on the live Render cloud deployment by end-user testing. Core reasoning, MCP tools, security defenses, and SQLite memory persistence are proven and verified locally via the automated test suite; end-to-end cloud reasoning calls remain to be verified live.
 
 RetailMind AI is fully configured for cloud deployment on [Render](https://render.com/) and [Railway](https://railway.app/) using `Dockerfile`, `Procfile`, or `railway.json`.
 
@@ -224,4 +224,4 @@ RetailMind AI is fully configured for cloud deployment on [Render](https://rende
 - [x] **Remediation Phase A — Critical Access Control & Validation**: Session snapshot sync across MCP subprocesses, tenant isolation, session ownership check on all 8 tools, non-finite numeric quarantine (80/80 tests passing).
 - [x] **Remediation Phase B — Financial Correctness & Cost Accounting**: Distinct order counting, correct zero-base growth conventions, dynamic IQR multiplier, formula-sanitized CSV export, deterministic memory verification, exact token reconciliation (91/91 tests passing).
 - [x] **Remediation Phase C — Final Quality & Acceptance**: Synthetic-only demo policy, genuine chronological near-failure recovery trace, missing i18n keys eliminated, storage path traversal defense, pre/post budget enforcement (98/98 tests passing).
-- [x] **Capstone Comprehensive Audit**: Day 1–5 requirements verification, 5 submission artifacts validation, audit reports generated (`docs/CAPSTONE_COMPLETION_REPORT.md`, `docs/REMAINING_WORK_CHECKLIST.md`). Status: Ready With Minor Issues.
+- [x] **Capstone Comprehensive Audit**: Day 1–5 requirements verification, 5 submission artifacts validation, audit reports generated (`docs/CAPSTONE_COMPLETION_REPORT.md`, `docs/audit_reports/REMAINING_WORK_CHECKLIST.md`). Status: Ready With Minor Issues.
