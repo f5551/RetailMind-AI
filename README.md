@@ -8,6 +8,10 @@
 
 **RetailMind AI** is an autonomous, single-agent conversational analytics system designed for CSV retail sales data analysis. Built as the Capstone project for **LLM4Yemen Track B Week 5**, it pairs Google Gemini models (`gemini-3.1-flash-lite`) with the Model Context Protocol (MCP) to provide verifiable retail data insights, statistical anomaly detection, performance rankings, and approval-gated report generation with full **bilingual Arabic (RTL) and English (LTR)** support.
 
+> 🌐 **Live Demo:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)  
+> 📦 **GitHub Repository:** [https://github.com/f5551/RetailMind-AI](https://github.com/f5551/RetailMind-AI)  
+> ⚙️ **Cloud Stack:** Deployed as a Docker container on Render running a bilingual Streamlit SaaS interface, powered by Google Gemini single-agent reasoning, official Model Context Protocol (MCP) tool routing, and SQLite memory.
+
 ---
 
 ## 📋 Architectural Overview
@@ -117,7 +121,7 @@ RetailMind-AI/
 ### 1. Clone the repository & create Virtual Environment
 ```powershell
 # In PowerShell / Command Prompt
-git clone <REPO_URL_PENDING_SUBMISSION>
+git clone https://github.com/f5551/RetailMind-AI.git
 cd "RetailMind A"
 
 # Create virtual environment (inherit global packages if desired)
@@ -172,11 +176,13 @@ Open your browser to `http://localhost:8501`.
 
 ---
 
-## ☁️ Cloud Deployment (Railway)
+## ☁️ Cloud Deployment (Render & Railway)
 
-> **Live Deployment Status:** Pending Cloud Deployment (Railway / Render). Deployment configuration files, healthchecks, and Docker container definitions are verified locally; public deployment URL will be registered upon deployment.
+> **Live Demo Available:** [https://retailmind-ai-skwq.onrender.com/](https://retailmind-ai-skwq.onrender.com/)  
+> **Deployment Architecture:** Multi-stage production `Dockerfile` running on Render Web Service, exposing the bilingual Streamlit SaaS dashboard connected to the Gemini agent and standard MCP tools.  
+> **Persistence Notice:** Render Free tier operates on an ephemeral filesystem. While production persistent disk volume attachment is defined for `/app/data` (`RETAILMIND_DATA_DIR`), the Render free tier does not guarantee persistence across container idle sleep cycles or restarts. Persistent episodic memory and restart recovery are fully tested and proven in the local automated test suite.
 
-RetailMind AI is fully configured for deployment on [Railway](https://railway.app/) using `Procfile`, `railway.json`, or `Dockerfile`.
+RetailMind AI is fully configured for cloud deployment on [Render](https://render.com/) and [Railway](https://railway.app/) using `Dockerfile`, `Procfile`, or `railway.json`.
 
 1. **Volume Attachment:** Attach a Railway Volume to `/app/data` and configure `RETAILMIND_DATA_DIR=/app/data` to ensure SQLite memory and audit records persist across deployments.
 2. **Environment Variables:** Configure `GEMINI_API_KEY`, `GEMINI_MODEL`, `MAX_TURNS`, `BUDGET_PER_TASK_USD`, and `PERMISSION_POLICY`.
